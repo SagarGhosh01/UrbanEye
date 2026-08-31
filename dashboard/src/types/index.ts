@@ -5,6 +5,12 @@ export interface LocationData {
   lng: number | null;
   accuracy_m?: number | null;
   status: 'LOCKED' | 'DEGRADED' | 'UNAVAILABLE';
+  resolved_address?: string | null;
+  road_name?: string | null;
+  locality?: string | null;
+  city?: string | null;
+  postal_code?: string | null;
+  maps_url?: string | null;
 }
 
 export interface EvidenceData {

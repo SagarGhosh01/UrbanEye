@@ -123,6 +123,12 @@ export const EventTimeline: React.FC<Props> = ({ events, onSelectEvent }) => {
                       {ev.location?.lat ? 'GPS Locked' : 'GPS Unavailable'}
                     </span>
                   </div>
+
+                  {ev.location?.resolved_address && (
+                    <div className="text-[10px] text-sky-300 font-sans truncate max-w-xs mt-0.5" title={ev.location.resolved_address}>
+                      📍 {ev.location.resolved_address}
+                    </div>
+                  )}
                 </div>
               </div>
 

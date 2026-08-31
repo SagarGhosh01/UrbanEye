@@ -167,17 +167,42 @@ export const EventDetailModal: React.FC<Props> = ({ event, onClose, onUpdateStat
 
           {/* Key Details Grid */}
           <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
-              <span className="text-slate-400 block mb-1 flex items-center">
-                <MapPin className="w-3.5 h-3.5 mr-1 text-sky-400" /> GPS Geotag
-              </span>
+            <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 block flex items-center">
+                  <MapPin className="w-3.5 h-3.5 mr-1 text-sky-400" /> Exact Physical Location
+                </span>
+                {event.location?.lat && (
+                  <a
+                    href={`https://www.google.com/maps?q=${event.location.lat},${event.location.lng}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-sky-400 hover:text-sky-300 underline font-mono"
+                  >
+                    Open in Maps ↗
+                  </a>
+                )}
+              </div>
+
               {event.location?.lat ? (
-                <div className="font-mono text-slate-200">
-                  {event.location.lat.toFixed(6)}, {event.location.lng?.toFixed(6)}
-                  <span className="block text-[10px] text-emerald-400">Lock Accuracy: ±{event.location.accuracy_m}m</span>
+                <div className="space-y-1">
+                  {event.location.resolved_address ? (
+                    <div className="text-slate-100 font-semibold text-[11px] leading-tight">
+                      {event.location.resolved_address}
+                    </div>
+                  ) : (
+                    <div className="text-slate-300 font-mono text-[11px]">
+                      Lat: {event.location.lat.toFixed(6)}, Lng: {event.location.lng?.toFixed(6)}
+                    </div>
+                  )}
+                  <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-2">
+                    <span>Precision: ±{event.location.accuracy_m || 5.0}m</span>
+                    <span>•</span>
+                    <span>{event.location.lat.toFixed(6)}, {event.location.lng?.toFixed(6)}</span>
+                  </div>
                 </div>
               ) : (
-                <span className="text-amber-400 font-semibold font-mono">GPS Signal Unavailable (Tunnel/Shadow)</span>
+                <span className="text-amber-400 font-semibold font-mono text-[11px]">GPS Signal Unavailable (Tunnel/Underpass)</span>
               )}
             </div>
 

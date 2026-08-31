@@ -31,6 +31,8 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
     plates: string[];
     potholes_count: number;
     annotated_frame?: string;
+    geocodedAddress?: string;
+    roadName?: string;
   }>({
     latency_ms: 0,
     detections_count: 0,
@@ -178,6 +180,8 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
           plates: data.anpr_results?.map((p: any) => p.plate) || [],
           potholes_count: data.hazards?.length || 0,
           annotated_frame: data.annotated_frame,
+          geocodedAddress: data.geocoding?.formatted_address,
+          roadName: data.geocoding?.road,
         });
 
         if (audioAlerts && (data.hazards?.length > 0 || data.anpr_results?.length > 0)) {
@@ -376,18 +380,26 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
               </div>
 
               {/* Bottom Target Reticle */}
-              <div className="absolute bottom-3 left-3 right-3 bg-slate-950/85 backdrop-blur-md p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs shadow-lg pointer-events-none">
-                <div>
-                  <span className="text-slate-400 text-[10px] block">LIVE DETECTIONS</span>
-                  <span className="font-bold text-emerald-400">
-                    {latestInference.detections_count} Objects • {latestInference.potholes_count} Potholes
-                  </span>
+              <div className="absolute bottom-3 left-3 right-3 bg-slate-950/85 backdrop-blur-md p-2.5 rounded-xl border border-slate-800 space-y-1 text-xs shadow-lg pointer-events-none">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">LIVE DETECTIONS</span>
+                    <span className="font-bold text-emerald-400">
+                      {latestInference.detections_count} Objects • {latestInference.potholes_count} Potholes
+                    </span>
+                  </div>
+
+                  {latestInference.plates.length > 0 && (
+                    <div className="text-right">
+                      <span className="text-slate-400 text-[10px] block">SCANNED PLATE</span>
+                      <span className="font-bold text-amber-400 font-mono">{latestInference.plates[0]}</span>
+                    </div>
+                  )}
                 </div>
 
-                {latestInference.plates.length > 0 && (
-                  <div className="text-right">
-                    <span className="text-slate-400 text-[10px] block">SCANNED PLATE</span>
-                    <span className="font-bold text-amber-400 font-mono">{latestInference.plates[0]}</span>
+                {latestInference.geocodedAddress && (
+                  <div className="pt-1 border-t border-slate-800 text-[10px] text-sky-300 truncate font-sans">
+                    📍 {latestInference.geocodedAddress}
                   </div>
                 )}
               </div>

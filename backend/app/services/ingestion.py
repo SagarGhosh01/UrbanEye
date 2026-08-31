@@ -121,7 +121,13 @@ async def process_incoming_event(event_data: EventCreate, db: AsyncSession) -> E
                 "lat": db_event.lat,
                 "lng": db_event.lng,
                 "accuracy_m": db_event.accuracy_m,
-                "status": "LOCKED" if db_event.lat else "UNAVAILABLE"
+                "status": "LOCKED" if db_event.lat else "UNAVAILABLE",
+                "resolved_address": event_data.location.resolved_address if event_data.location else None,
+                "road_name": event_data.location.road_name if event_data.location else None,
+                "locality": event_data.location.locality if event_data.location else None,
+                "city": event_data.location.city if event_data.location else "New Delhi",
+                "postal_code": event_data.location.postal_code if event_data.location else None,
+                "maps_url": event_data.location.maps_url if event_data.location else (f"https://www.google.com/maps?q={db_event.lat},{db_event.lng}" if db_event.lat else None)
             },
             "bus_id": db_event.bus_id,
             "camera_id": db_event.camera_id,

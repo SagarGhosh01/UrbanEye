@@ -11,6 +11,7 @@ class EventType(str, Enum):
     ILLEGAL_PARKING = "ILLEGAL_PARKING"
     CONGESTION = "CONGESTION"
     ANPR_ALERT = "ANPR_ALERT"
+    ROAD_SURFACE_EROSION = "ROAD_SURFACE_EROSION"
 
 class EventSeverity(str, Enum):
     LOW = "LOW"
@@ -30,6 +31,12 @@ class LocationSchema(BaseModel):
     lng: Optional[float] = None
     accuracy_m: Optional[float] = 5.0
     status: Optional[str] = "LOCKED"  # LOCKED, DEGRADED, UNAVAILABLE
+    resolved_address: Optional[str] = None
+    road_name: Optional[str] = None
+    locality: Optional[str] = None
+    city: Optional[str] = "New Delhi"
+    postal_code: Optional[str] = None
+    maps_url: Optional[str] = None
 
 class EvidenceSchema(BaseModel):
     thumbnail_url: Optional[str] = None
