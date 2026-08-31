@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Smartphone, Layers, Crosshair, Cpu, Gauge, Zap } from 'lucide-react';
+import { Camera, Smartphone, Layers, Crosshair, Cpu, Gauge, Zap, AlertTriangle, ShieldCheck, GraduationCap } from 'lucide-react';
 import { BusTelemetry } from '../../types';
 import { realtimeService } from '../../services/websocket';
 
@@ -16,6 +16,9 @@ export const LiveCameraFeed: React.FC<Props> = ({ selectedBusId, onBusSelect, bu
   const [latencyMs, setLatencyMs] = useState<number>(38);
   const [showBoxes, setShowBoxes] = useState<boolean>(true);
   const [showSegmentation, setShowSegmentation] = useState<boolean>(true);
+  const [schoolZoneMode, setSchoolZoneMode] = useState<boolean>(false);
+  const [inCabDriverAlert, setInCabDriverAlert] = useState<boolean>(false);
+  
   const [livePhoneFrame, setLivePhoneFrame] = useState<string | null>(null);
   const [livePhoneData, setLivePhoneData] = useState<any>(null);
   const [frameIndex, setFrameIndex] = useState<number>(0);
@@ -27,6 +30,14 @@ export const LiveCameraFeed: React.FC<Props> = ({ selectedBusId, onBusSelect, bu
         setLivePhoneFrame(msg.data.annotated_frame);
         setLivePhoneData(msg.data);
         setLatencyMs(msg.data.latency_ms || 42);
+
+        // Check if any pedestrian is within danger zone
+        const peds = msg.data.detections?.filter((d: any) => d.label === 'pedestrian');
+        if (peds && peds.length > 0) {
+          setInCabDriverAlert(true);
+        } else {
+          setInCabDriverAlert(false);
+        }
       }
     });
     return () => unsub();
@@ -41,6 +52,16 @@ export const LiveCameraFeed: React.FC<Props> = ({ selectedBusId, onBusSelect, bu
     }, 150);
     return () => clearInterval(timer);
   }, [livePhoneFrame]);
+
+  // Demo simulator driver alert trigger in synthetic mode
+  useEffect(() => {
+    if (!livePhoneFrame && schoolZoneMode) {
+      const alertTimer = setInterval(() => {
+        setInCabDriverAlert(prev => !prev);
+      }, 3500);
+      return () => clearInterval(alertTimer);
+    }
+  }, [livePhoneFrame, schoolZoneMode]);
 
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-lg flex flex-col h-full justify-between">
@@ -64,6 +85,12 @@ export const LiveCameraFeed: React.FC<Props> = ({ selectedBusId, onBusSelect, bu
                 }`}>
                   {livePhoneFrame ? 'PHONE LIVE' : 'FRONT CAM'}
                 </span>
+                {schoolZoneMode && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse flex items-center space-x-1">
+                    <GraduationCap className="w-3 h-3" />
+                    <span>SCHOOL ZONE (20km/h)</span>
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 truncate">
                 YOLOv8 Object Tracking • EasyOCR • Real Pothole CV
@@ -71,8 +98,20 @@ export const LiveCameraFeed: React.FC<Props> = ({ selectedBusId, onBusSelect, bu
             </div>
           </div>
 
-          {/* Right: Bus Selector & Phone Mode Button */}
+          {/* Right: Bus Selector, School Zone & Phone Mode Button */}
           <div className="flex items-center space-x-1.5 shrink-0">
+            <button
+              onClick={() => setSchoolZoneMode(!schoolZoneMode)}
+              className={`p-1.5 rounded-lg border text-xs transition-all ${
+                schoolZoneMode
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md shadow-amber-500/20'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+              }`}
+              title="Toggle School-Zone / Sensitive Geofence Mode"
+            >
+              <GraduationCap className="w-4 h-4" />
+            </button>
+
             {onOpenPhoneMode && (
               <button
                 onClick={onOpenPhoneMode}
@@ -183,6 +222,21 @@ export const LiveCameraFeed: React.FC<Props> = ({ selectedBusId, onBusSelect, bu
                       #145 AUTO [91%]
                     </text>
 
+                    {/* Pedestrian in Crosswalk */}
+                    <rect
+                      x="710"
+                      y="430"
+                      width="65"
+                      height="130"
+                      fill="rgba(239, 68, 68, 0.25)"
+                      stroke="#ef4444"
+                      strokeWidth="2"
+                    />
+                    <rect x="710" y="408" width="105" height="22" fill="#ef4444" />
+                    <text x="715" y="423" fill="#ffffff" fontSize="11" fontWeight="bold" fontFamily="monospace">
+                      #18 PEDESTRIAN
+                    </text>
+
                     <rect
                       x="595"
                       y="490"
@@ -199,6 +253,17 @@ export const LiveCameraFeed: React.FC<Props> = ({ selectedBusId, onBusSelect, bu
                 )}
               </svg>
             </>
+          )}
+
+          {/* In-Cab Driver Safety Collision Alert Flash Banner */}
+          {inCabDriverAlert && (
+            <div className="absolute top-10 left-3 right-3 bg-red-600/90 text-white font-mono text-xs px-3 py-2 rounded-xl border border-red-400 shadow-2xl flex items-center justify-between animate-bounce z-20">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-4 h-4 text-yellow-300 shrink-0" />
+                <span className="font-bold tracking-wider">⚠️ IN-CAB DRIVER ALERT: PEDESTRIAN IN BRAKING CORRIDOR</span>
+              </div>
+              <span className="bg-red-950 px-2 py-0.5 rounded text-[10px] font-bold">DISTANCE: 4.2m</span>
+            </div>
           )}
 
           {/* Clean, Non-Wrapping HUD Overlay */}

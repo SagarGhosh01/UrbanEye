@@ -11,6 +11,7 @@ import { ANPRReviewConsole } from './components/anpr/ANPRReviewConsole';
 import { FleetDeviceHealth } from './components/fleet/FleetDeviceHealth';
 import { PilotDemoControls } from './components/demo/PilotDemoControls';
 import { PhoneCameraStreamer } from './components/phone/PhoneCameraStreamer';
+import { MunicipalTicketsBoard } from './components/tickets/MunicipalTicketsBoard';
 import { api } from './services/api';
 import { realtimeService } from './services/websocket';
 import { 
@@ -24,13 +25,13 @@ import {
   HeatmapPoint, 
   UserRole 
 } from './types';
-import { Eye, ShieldAlert, Cpu, Activity, Smartphone, QrCode } from 'lucide-react';
+import { Eye, ShieldAlert, Cpu, Activity, Smartphone, QrCode, Building2 } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [currentRole, setCurrentRole] = useState<UserRole>('admin');
   const [demoMode, setDemoMode] = useState<boolean>(true);
   const [isConnected, setIsConnected] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'main' | 'anpr' | 'devices' | 'analytics'>('main');
+  const [activeTab, setActiveTab] = useState<'main' | 'anpr' | 'devices' | 'analytics' | 'tickets'>('main');
   const [showPhoneStreamer, setShowPhoneStreamer] = useState<boolean>(false);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
 
@@ -208,6 +209,18 @@ export const App: React.FC = () => {
               <Activity className="w-3.5 h-3.5" />
               <span>Municipal Road Quality</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('tickets')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                activeTab === 'tickets'
+                  ? 'bg-emerald-500 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>PWD Work-Orders</span>
+            </button>
           </div>
 
           {/* Phone as Bus Camera Launcher */}
@@ -308,6 +321,10 @@ export const App: React.FC = () => {
               <BandwidthSavingsGauge report={bandwidthReport} />
             </div>
           </div>
+        )}
+
+        {activeTab === 'tickets' && (
+          <MunicipalTicketsBoard />
         )}
       </main>
 

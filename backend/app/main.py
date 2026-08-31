@@ -6,7 +6,7 @@ from .core.config import settings
 from .db.database import engine, Base, AsyncSessionLocal
 from .services.fleet import seed_initial_data
 from .services.realtime import manager
-from .api.routes import auth, events, fleet, analytics, anpr, simulator, phone
+from .api.routes import auth, events, fleet, analytics, anpr, simulator, phone, tickets, explainability
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("UrbanEye.Backend")
@@ -46,6 +46,8 @@ app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", 
 app.include_router(anpr.router, prefix=f"{settings.API_V1_STR}/anpr", tags=["ANPR & Law Enforcement Review"])
 app.include_router(simulator.router, prefix=f"{settings.API_V1_STR}/simulator", tags=["Demo & Scenario Simulator"])
 app.include_router(phone.router, prefix=f"{settings.API_V1_STR}/phone", tags=["Phone-as-Bus-Camera Live ML Stream"])
+app.include_router(tickets.router, prefix=f"{settings.API_V1_STR}/tickets", tags=["Municipal Work-Order Tickets & Consensus"])
+app.include_router(explainability.router, prefix=f"{settings.API_V1_STR}/explainability", tags=["Grad-CAM & Saliency Explainability"])
 
 @app.get("/health")
 async def health_check():

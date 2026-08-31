@@ -7,7 +7,9 @@ import {
   ANPRRecord, 
   KPISummary, 
   BandwidthReport, 
-  HeatmapPoint 
+  HeatmapPoint,
+  MunicipalTicket,
+  EmissionsReport
 } from '../types';
 
 const getApiBase = () => {
@@ -119,6 +121,46 @@ export const api = {
   async toggleNetwork(deviceId: string, simulateOffline: boolean): Promise<any> {
     const res = await apiClient.post('/simulator/toggle-network', null, {
       params: { device_id: deviceId, simulate_offline: simulateOffline }
+    });
+    return res.data;
+  },
+
+  // Municipal Tickets & Work-Orders
+  async getTickets(): Promise<MunicipalTicket[]> {
+    const res = await apiClient.get('/tickets');
+    return res.data;
+  },
+
+  async generateTicket(req: {
+    event_id: string;
+    hazard_type: string;
+    severity: string;
+    lat?: number | null;
+    lng?: number | null;
+    buses?: string[];
+    road_name?: string;
+  }): Promise<MunicipalTicket> {
+    const res = await apiClient.post('/tickets/generate', req);
+    return res.data;
+  },
+
+  async getEmissionsReport(totalVehicles: number = 450, totalPotholes: number = 8): Promise<EmissionsReport> {
+    const res = await apiClient.get('/tickets/emissions-report', {
+      params: { total_vehicles: totalVehicles, total_potholes: totalPotholes }
+    });
+    return res.data;
+  },
+
+  // Grad-CAM Explainability
+  async getGradCam(imageBase64: string, bbox?: number[]): Promise<{
+    heatmap_base64: string;
+    overlay_base64: string;
+    saliency_peak_activation: number;
+    decision_factors: Array<{ feature: string; weight: number }>;
+  }> {
+    const res = await apiClient.post('/explainability/generate-gradcam', {
+      image_base64: imageBase64,
+      bbox: bbox
     });
     return res.data;
   }
