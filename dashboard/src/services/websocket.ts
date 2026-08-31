@@ -2,10 +2,15 @@ type MessageHandler = (data: any) => void;
 
 class RealtimeService {
   private ws: WebSocket | null = null;
-  private url: string = 'ws://localhost:8000/ws';
   private listeners: Map<string, Set<MessageHandler>> = new Map();
   private reconnectInterval: number = 2500;
   private shouldReconnect: boolean = true;
+
+  private getUrl(): string {
+    const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+    const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${host}:8000/ws`;
+  }
 
   constructor() {
     this.connect();
@@ -13,7 +18,7 @@ class RealtimeService {
 
   public connect() {
     try {
-      this.ws = new WebSocket(this.url);
+      this.ws = new WebSocket(this.getUrl());
 
       this.ws.onopen = () => {
         console.log('[UrbanEye WS] Connected to central real-time broker');

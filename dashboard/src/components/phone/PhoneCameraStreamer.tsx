@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Navigation, RefreshCw, Zap, Shield, Play, Square, Smartphone, Compass, Activity, Volume2, VolumeX } from 'lucide-react';
+import { Camera, Navigation, RefreshCw, Zap, Shield, Play, Square, Smartphone, Compass, Activity, Volume2, VolumeX, AlertCircle, Upload } from 'lucide-react';
 
 interface Props {
   onBackToDashboard?: () => void;
@@ -10,6 +10,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
   const [busId, setBusId] = useState<string>('BUS-101');
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [audioAlerts, setAudioAlerts] = useState<boolean>(true);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   
   // Geolocation & IMU Motion Sensors
   const [gpsLocation, setGpsLocation] = useState<{ lat: number | null; lng: number | null; accuracy: number | null; speed: number | null }>({
@@ -29,6 +30,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
     detections_count: number;
     plates: string[];
     potholes_count: number;
+    annotated_frame?: string;
   }>({
     latency_ms: 0,
     detections_count: 0,
@@ -38,21 +40,40 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureIntervalRef = useRef<number | null>(null);
 
-  // Initialize camera
+  const getBackendUrl = () => {
+    const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+    return `http://${host}:8000/api/v1/phone/process-frame`;
+  };
+
+  // Robust Cross-Browser Camera Ingestion
   const startCamera = async () => {
+    setCameraError(null);
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
 
-      const constraints = {
+      // Check if getUserMedia is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        // Fallback for legacy webkit/moz
+        const legacyGetUserMedia = (navigator as any).getUserMedia ||
+                                   (navigator as any).webkitGetUserMedia ||
+                                   (navigator as any).mozGetUserMedia ||
+                                   (navigator as any).msGetUserMedia;
+        if (!legacyGetUserMedia) {
+          throw new Error("HTTP_SECURITY_RESTRICTION: Mobile browsers require HTTPS or localhost for continuous live stream. Use the 'Capture Road Photo' mode below!");
+        }
+      }
+
+      const constraints: MediaStreamConstraints = {
         video: {
-          facingMode: facingMode,
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
         },
         audio: false,
       };
@@ -64,9 +85,10 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
         await videoRef.current.play();
       }
       setIsStreaming(true);
-    } catch (err) {
-      console.error('Camera access error:', err);
-      alert('Camera access denied or unavailable. Please grant camera permission.');
+    } catch (err: any) {
+      console.warn('Camera access issue:', err);
+      const errMsg = err.message || 'Camera permission denied or HTTP security restriction.';
+      setCameraError(errMsg);
     }
   };
 
@@ -83,7 +105,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
           });
         },
         (err) => {
-          console.warn('Geolocation warning:', err.message);
+          console.warn('Geolocation notice:', err.message);
         },
         { enableHighAccuracy: true, maximumAge: 1000 }
       );
@@ -95,14 +117,13 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
   useEffect(() => {
     const handleMotion = (event: DeviceMotionEvent) => {
       const z = event.accelerationIncludingGravity?.z || 0;
-      const normalizedZ = Math.abs(z - 9.8); // Offset Earth gravity
+      const normalizedZ = Math.abs(z - 9.8);
       setMotionData((prev) => ({
         ...prev,
         accelZ: round2(normalizedZ),
         maxBump: Math.max(prev.maxBump, round2(normalizedZ)),
       }));
 
-      // Trigger Haptic Vibration if road bump detected (> 3.5 m/s^2)
       if (normalizedZ > 3.5 && 'vibrate' in navigator) {
         navigator.vibrate(100);
       }
@@ -128,10 +149,50 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
 
   const round2 = (num: number) => Math.round(num * 100) / 100;
 
-  // Frame Capture & Real-Time ML Inference Loop
+  // Process a Blob Image Frame with Backend YOLOv8 Engine
+  const sendFrameToBackend = async (blob: Blob) => {
+    const formData = new FormData();
+    formData.append('file', blob, 'frame.jpg');
+    formData.append('bus_id', busId);
+    formData.append('accel_z_spike', motionData.accelZ.toString());
+    formData.append('compass_heading', motionData.heading.toString());
+    
+    if (gpsLocation.lat !== null && gpsLocation.lng !== null) {
+      formData.append('lat', gpsLocation.lat.toString());
+      formData.append('lng', gpsLocation.lng.toString());
+      formData.append('accuracy_m', (gpsLocation.accuracy || 5.0).toString());
+      formData.append('speed_kmh', (gpsLocation.speed || 0.0).toString());
+    }
+
+    try {
+      const res = await fetch(getBackendUrl(), {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setLatestInference({
+          latency_ms: data.latency_ms || 0,
+          detections_count: data.detections?.length || 0,
+          plates: data.anpr_results?.map((p: any) => p.plate) || [],
+          potholes_count: data.hazards?.length || 0,
+          annotated_frame: data.annotated_frame,
+        });
+
+        if (audioAlerts && (data.hazards?.length > 0 || data.anpr_results?.length > 0)) {
+          if ('vibrate' in navigator) navigator.vibrate(80);
+        }
+      }
+    } catch (e) {
+      console.warn('Inference transmission error:', e);
+    }
+  };
+
+  // Continuous Camera Streaming Loop
   useEffect(() => {
     if (isStreaming) {
-      captureIntervalRef.current = window.setInterval(async () => {
+      captureIntervalRef.current = window.setInterval(() => {
         if (!videoRef.current || !canvasRef.current) return;
         const video = videoRef.current;
         const canvas = canvasRef.current;
@@ -145,47 +206,10 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        canvas.toBlob(async (blob) => {
-          if (!blob) return;
-
-          const formData = new FormData();
-          formData.append('file', blob, 'frame.jpg');
-          formData.append('bus_id', busId);
-          formData.append('accel_z_spike', motionData.accelZ.toString());
-          formData.append('compass_heading', motionData.heading.toString());
-          
-          if (gpsLocation.lat !== null && gpsLocation.lng !== null) {
-            formData.append('lat', gpsLocation.lat.toString());
-            formData.append('lng', gpsLocation.lng.toString());
-            formData.append('accuracy_m', (gpsLocation.accuracy || 5.0).toString());
-            formData.append('speed_kmh', (gpsLocation.speed || 0.0).toString());
-          }
-
-          try {
-            const res = await fetch('http://localhost:8000/api/v1/phone/process-frame', {
-              method: 'POST',
-              body: formData,
-            });
-
-            if (res.ok) {
-              const data = await res.json();
-              setLatestInference({
-                latency_ms: data.latency_ms || 0,
-                detections_count: data.detections?.length || 0,
-                plates: data.anpr_results?.map((p: any) => p.plate) || [],
-                potholes_count: data.hazards?.length || 0,
-              });
-
-              // Audio / Vibration notification on pothole or plate
-              if (audioAlerts && (data.hazards?.length > 0 || data.anpr_results?.length > 0)) {
-                if ('vibrate' in navigator) navigator.vibrate(80);
-              }
-            }
-          } catch (e) {
-            // Processing error
-          }
+        canvas.toBlob((blob) => {
+          if (blob) sendFrameToBackend(blob);
         }, 'image/jpeg', 0.8);
-      }, 100); // 10 FPS
+      }, 120);
     } else {
       if (captureIntervalRef.current) {
         clearInterval(captureIntervalRef.current);
@@ -198,6 +222,14 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
       }
     };
   }, [isStreaming, busId, gpsLocation, motionData, audioAlerts]);
+
+  // Native Mobile Photo File Input Handler (100% Reliable fallback on all mobile devices)
+  const handleNativePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      sendFrameToBackend(file);
+    }
+  };
 
   const toggleStreaming = () => {
     if (isStreaming) {
@@ -212,7 +244,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-mono selection:bg-sky-500 selection:text-white">
-      {/* Top Phone HUD */}
+      {/* Top Phone HUD Header */}
       <header className="bg-slate-900/90 border-b border-slate-800 p-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center space-x-2">
           <div className="p-2 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/40">
@@ -220,7 +252,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
           </div>
           <div>
             <h1 className="font-bold text-sm text-slate-100 tracking-wider">BEL MOBILE BUS EDGE</h1>
-            <p className="text-[10px] text-slate-400">Multi-Modal Vision • YOLOv8 • EasyOCR • IMU Bump Fusion</p>
+            <p className="text-[10px] text-slate-400">YOLOv8 Real Vision • HSRP ANPR • IMU Bump Sensor</p>
           </div>
         </div>
 
@@ -250,40 +282,76 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
       <main className="flex-1 p-3 flex flex-col space-y-3 max-w-2xl mx-auto w-full">
         {/* Video Canvas Container */}
         <div className="relative rounded-2xl overflow-hidden bg-black border-2 border-slate-800 aspect-[4/3] shadow-2xl flex items-center justify-center">
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            autoPlay
-            className="w-full h-full object-cover"
-          />
+          {/* If a processed frame came back, show annotated view */}
+          {latestInference.annotated_frame && !isStreaming ? (
+            <img
+              src={latestInference.annotated_frame}
+              alt="YOLO Detection Frame"
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              autoPlay
+              className="w-full h-full object-cover"
+            />
+          )}
           <canvas ref={canvasRef} className="hidden" />
 
           {/* Start Screen when not streaming */}
-          {!isStreaming && (
-            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
-              <div className="p-4 bg-sky-500/10 rounded-full border border-sky-500/30 mb-4">
+          {!isStreaming && !latestInference.annotated_frame && (
+            <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+              <div className="p-4 bg-sky-500/10 rounded-full border border-sky-500/30 mb-3">
                 <Camera className="w-10 h-10 text-sky-400" />
               </div>
               <h2 className="text-base font-bold text-slate-100 mb-1">Turn Phone into an AI Roaming Bus Sensor</h2>
-              <p className="text-xs text-slate-400 max-w-sm mb-5 leading-relaxed font-sans">
-                Mount your smartphone facing the road. Live 1080p frames, GPS trajectory, and accelerometer bump shocks will stream directly into the YOLOv8 + OCR engine!
+              <p className="text-xs text-slate-400 max-w-sm mb-4 leading-relaxed font-sans">
+                Point your mobile camera at the road or vehicles. Real YOLOv8 AI will detect vehicles, scan plates, and find potholes live!
               </p>
-              <button
-                onClick={startCamera}
-                className="px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/30 flex items-center space-x-2 transition-all transform active:scale-95"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                <span>START LIVE EDGE CAMERA</span>
-              </button>
+
+              {cameraError && (
+                <div className="mb-4 bg-amber-500/20 border border-amber-500/40 p-2.5 rounded-xl text-left text-[11px] text-amber-200 max-w-sm">
+                  <div className="flex items-center space-x-1.5 font-bold text-amber-300 mb-1">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>Live Stream Notice</span>
+                  </div>
+                  <span>On mobile Chrome over HTTP, use the direct <strong>Capture Road Photo</strong> button below for instant ML detection!</span>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-center gap-2 w-full max-w-xs">
+                <button
+                  onClick={startCamera}
+                  className="w-full px-4 py-2.5 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/30 flex items-center justify-center space-x-2 transition-all active:scale-95"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>START LIVE STREAM</span>
+                </button>
+
+                {/* Native camera file input fallback */}
+                <label className="w-full px-4 py-2.5 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center space-x-2 cursor-pointer transition-all active:scale-95">
+                  <Upload className="w-3.5 h-3.5 text-sky-400" />
+                  <span>SNAP ROAD PHOTO</span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleNativePhotoCapture}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
           )}
 
           {/* Live In-Camera Telemetry Overlay */}
-          {isStreaming && (
+          {(isStreaming || latestInference.annotated_frame) && (
             <>
               {/* Top Left Status */}
-              <div className="absolute top-3 left-3 bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800 text-[11px] space-y-0.5 shadow-lg">
+              <div className="absolute top-3 left-3 bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800 text-[11px] space-y-0.5 shadow-lg pointer-events-none">
                 <div className="flex items-center space-x-2 text-emerald-400 font-bold">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                   <span>TRANSMITTING • {busId}</span>
@@ -294,7 +362,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
               </div>
 
               {/* Top Right GPS & Motion Sensors */}
-              <div className="absolute top-3 right-3 bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800 text-[10px] text-right space-y-0.5 shadow-lg">
+              <div className="absolute top-3 right-3 bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800 text-[10px] text-right space-y-0.5 shadow-lg pointer-events-none">
                 <div className="flex items-center justify-end space-x-1.5 text-slate-300">
                   <Navigation className="w-3 h-3 text-sky-400" />
                   <span>{gpsLocation.lat ? 'GPS LOCKED' : 'SEARCHING GPS...'}</span>
@@ -308,7 +376,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
               </div>
 
               {/* Bottom Target Reticle */}
-              <div className="absolute bottom-3 left-3 right-3 bg-slate-950/85 backdrop-blur-md p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs shadow-lg">
+              <div className="absolute bottom-3 left-3 right-3 bg-slate-950/85 backdrop-blur-md p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs shadow-lg pointer-events-none">
                 <div>
                   <span className="text-slate-400 text-[10px] block">LIVE DETECTIONS</span>
                   <span className="font-bold text-emerald-400">
@@ -366,21 +434,21 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
             </select>
           </div>
 
-          <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
             <button
               onClick={() => {
                 setFacingMode(prev => prev === 'environment' ? 'user' : 'environment');
                 if (isStreaming) startCamera();
               }}
-              className="px-3 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center space-x-1.5 transition-colors"
+              className="px-3 py-2 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center justify-center space-x-1.5 transition-colors"
             >
               <RefreshCw className="w-3 h-3" />
-              <span>Flip Camera ({facingMode === 'environment' ? 'Rear' : 'Front'})</span>
+              <span>Flip ({facingMode === 'environment' ? 'Rear' : 'Front'})</span>
             </button>
 
             <button
               onClick={toggleStreaming}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition-all ${
+              className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
                 isStreaming
                   ? 'bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-500/20'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
@@ -390,6 +458,19 @@ export const PhoneCameraStreamer: React.FC<Props> = ({ onBackToDashboard }) => {
               <span>{isStreaming ? 'STOP STREAM' : 'START STREAM'}</span>
             </button>
           </div>
+
+          {/* Quick Snapshot Action Button */}
+          <label className="w-full py-2.5 rounded-xl font-bold text-xs bg-sky-600/80 hover:bg-sky-600 text-white flex items-center justify-center space-x-2 cursor-pointer shadow-md transition-all active:scale-95">
+            <Camera className="w-3.5 h-3.5" />
+            <span>CAPTURE & DETECT ROAD PHOTO</span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleNativePhotoCapture}
+              className="hidden"
+            />
+          </label>
         </div>
       </main>
     </div>

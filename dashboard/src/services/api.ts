@@ -10,11 +10,19 @@ import {
   HeatmapPoint 
 } from '../types';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const getApiBase = () => {
+  const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+  return `http://${host}:8000/api/v1`;
+};
 
 const apiClient = axios.create({
-  baseURL: API_BASE,
-  timeout: 6000,
+  baseURL: getApiBase(),
+  timeout: 8000,
+});
+
+apiClient.interceptors.request.use((config) => {
+  config.baseURL = getApiBase();
+  return config;
 });
 
 export const api = {
