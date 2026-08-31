@@ -323,8 +323,11 @@ export const App: React.FC = () => {
               Open your phone's browser on the same Wi-Fi network and navigate to the address below. Your phone's rear camera and GPS will feed live directly into the YOLOv8 ML engine!
             </p>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-sm text-emerald-400 select-all">
-              http://172.26.82.84:5173
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-sm text-emerald-400 select-all space-y-1">
+              <div className="text-xs text-slate-400">Wi-Fi Network Address:</div>
+              <div className="font-bold text-base text-emerald-400">
+                http://10.16.41.204:5173
+              </div>
             </div>
 
             <p className="text-[11px] text-slate-500">
