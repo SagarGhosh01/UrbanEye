@@ -30,11 +30,18 @@ body {
   background: #475569;
 }
 
-/* Leaflet map custom dark theme override */
+/* Leaflet map custom dark theme override & z-index isolation */
 .leaflet-container {
   background: #090d16 !important;
   font-family: inherit;
+  z-index: 10 !important;
+  isolation: isolate;
 }
+
+.leaflet-tile-pane {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+}
+
 .leaflet-popup-content-wrapper, .leaflet-popup-tip {
   background: #1e293b !important;
   color: #f8fafc !important;

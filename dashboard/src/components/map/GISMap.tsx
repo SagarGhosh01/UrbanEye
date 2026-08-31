@@ -167,10 +167,10 @@ export const GISMap: React.FC<Props> = ({
           scrollWheelZoom={true}
           style={{ width: '100%', height: '100%', minHeight: '380px' }}
         >
-          {/* Dark Tile Layer (CartoDB Dark Matter) */}
+          {/* Standard OpenStreetMap Tile Layer with Custom Dark CSS Filter */}
           <TileLayer
-            attribution='&copy; <a href="https://carto.com/">CARTO</a> | Bharat Electronics'
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Bharat Electronics'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
           {/* Road Segment Polylines */}

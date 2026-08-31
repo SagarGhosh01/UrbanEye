@@ -313,7 +313,7 @@ export const App: React.FC = () => {
 
       {/* QR Code / Wi-Fi Connect Modal */}
       {showQrModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-center shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
             <div className="p-3 bg-sky-500/10 rounded-full border border-sky-500/30 w-14 h-14 mx-auto flex items-center justify-center">
               <Smartphone className="w-7 h-7 text-sky-400" />
