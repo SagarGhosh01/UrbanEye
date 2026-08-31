@@ -155,6 +155,46 @@ async def process_phone_frame(
         )
         await process_incoming_event(event_payload, db)
 
+    # If pedestrian in danger corridor, persist NEAR_MISS event
+    for det in result["detections"]:
+        if det["label"] == "pedestrian" and det.get("distance_m", 10.0) <= 6.5:
+            event_id = f"EVT-PED-{datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
+            event_payload = EventCreate(
+                event_id=event_id,
+                type=EventType.NEAR_MISS,
+                confidence=det["confidence"],
+                timestamp=datetime.datetime.utcnow(),
+                location=LocationSchema(
+                    lat=lat,
+                    lng=lng,
+                    accuracy_m=accuracy_m,
+                    status="LOCKED" if lat is not None else "UNAVAILABLE",
+                    resolved_address=geo_info["formatted_address"],
+                    road_name=geo_info["road"],
+                    locality=geo_info["suburb"],
+                    city=geo_info["city"],
+                    postal_code=geo_info["postcode"],
+                    maps_url=geo_info["maps_url"]
+                ),
+                bus_id=bus_id,
+                camera_id="PHONE_FRONT",
+                severity=EventSeverity.CRITICAL if det.get("distance_m", 10.0) <= 4.0 else EventSeverity.HIGH,
+                status=EventStatus.NEW,
+                evidence=EvidenceSchema(thumbnail_base64=result["annotated_frame"]),
+                metadata=EventMetadataSchema(
+                    model_version="yolov8n-multimodal-v2",
+                    edge_device_id="MOBILE-PHONE-CAM",
+                    bounding_boxes=[{"label": "pedestrian", "bbox": det["bbox"], "conf": det["confidence"]}],
+                    extra={
+                        "distance_m": det.get("distance_m"),
+                        "hazard_alert": "PEDESTRIAN_IN_BRAKING_CORRIDOR",
+                        "geocoded_address": geo_info["formatted_address"]
+                    }
+                )
+            )
+            await process_incoming_event(event_payload, db)
+            break
+
     return {
         **result,
         "geocoding": geo_info
