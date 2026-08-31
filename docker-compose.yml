@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # Central FastAPI Backend & WebSocket Broker
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: urbaneye-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./urban_eye.db
+      - SECRET_KEY=production-secret-key-urbaneye-bel
+    volumes:
+      - backend-data:/app/data
+    restart: unless-stopped
+
+  # React GIS Command & Control Dashboard
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: urbaneye-dashboard
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api/v1
+      - VITE_WS_URL=ws://localhost:8000/ws
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Edge Daemon Simulator (Simulates Onboard Jetson Unit on Bus-101)
+  edge-bus-101:
+    build:
+      context: .
+      dockerfile: edge/Dockerfile
+    container_name: urbaneye-edge-bus101
+    environment:
+      - URBANEYE_BUS_ID=BUS-101
+      - URBANEYE_DEVICE_ID=EDGE-101
+      - URBANEYE_BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend-data:
