@@ -22,25 +22,31 @@ async def process_phone_frame(
     lng: float = Form(None),
     accuracy_m: float = Form(5.0),
     speed_kmh: float = Form(0.0),
+    accel_z_spike: float = Form(0.0),
+    compass_heading: float = Form(0.0),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Receives live camera frames from the user's phone acting as a bus front-view camera.
-    Runs real YOLOv8 object detection, ByteTrack tracking, OCR plate recognition,
-    and road pothole detection, streaming results live to the central command dashboard.
+    Receives high-resolution live camera frames and IMU sensor telemetry from the user's phone.
+    Runs real YOLOv8 tracking, HSRP OCR ANPR, and IMU-fused Pothole Detection.
     """
     contents = await file.read()
     if not contents:
         raise HTTPException(status_code=400, detail="Empty frame")
 
-    # Run Real ML Pipeline
-    result = vision_pipeline.process_frame(contents)
+    sensor_motion = {
+        "accel_z_spike": accel_z_spike,
+        "compass_heading": compass_heading
+    }
+
+    # Run Enhanced Multi-Modal ML Pipeline
+    result = vision_pipeline.process_frame(contents, sensor_motion=sensor_motion)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 
     # Update Bus GPS telemetry if coordinates provided
     if lat is not None and lng is not None:
-        await update_bus_telemetry(bus_id, lat, lng, speed_kmh, 0.0, db)
+        await update_bus_telemetry(bus_id, lat, lng, speed_kmh, compass_heading, db)
 
     # Broadcast live camera stream & bounding boxes to all connected dashboard viewers
     await manager.broadcast({
@@ -58,8 +64,10 @@ async def process_phone_frame(
             "gps": {
                 "lat": lat,
                 "lng": lng,
-                "status": "LOCKED" if lat is not None else "UNAVAILABLE"
-            }
+                "status": "LOCKED" if lat is not None else "UNAVAILABLE",
+                "speed_kmh": speed_kmh
+            },
+            "imu": sensor_motion
         }
     })
 
@@ -83,9 +91,10 @@ async def process_phone_frame(
             status=EventStatus.NEW,
             evidence=EvidenceSchema(thumbnail_base64=result["annotated_frame"]),
             metadata=EventMetadataSchema(
-                model_version="yolov8n-phone-edge",
+                model_version="yolov8n-multimodal-v2",
                 edge_device_id="MOBILE-PHONE-CAM",
-                bounding_boxes=[{"label": hz["type"].lower(), "bbox": hz["bbox"], "conf": hz["confidence"]}]
+                bounding_boxes=[{"label": hz["type"].lower(), "bbox": hz["bbox"], "conf": hz["confidence"]}],
+                extra={"imu_bump_confirmed": hz.get("imu_confirmed", False)}
             )
         )
         await process_incoming_event(event_payload, db)
@@ -105,8 +114,9 @@ async def process_phone_frame(
             status=EventStatus.NEW,
             evidence=EvidenceSchema(thumbnail_base64=result["annotated_frame"]),
             metadata=EventMetadataSchema(
-                model_version="easyocr-plate-v1",
-                edge_device_id="MOBILE-PHONE-CAM"
+                model_version="easyocr-hsrp-v2",
+                edge_device_id="MOBILE-PHONE-CAM",
+                extra={"standard": anpr.get("standard", "Indian HSRP")}
             ),
             anpr_plate=anpr["plate"],
             anpr_confidence=anpr["confidence"]
