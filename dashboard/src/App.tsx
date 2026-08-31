@@ -341,9 +341,12 @@ export const App: React.FC = () => {
             </p>
 
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-sm text-emerald-400 select-all space-y-1">
-              <div className="text-xs text-slate-400">Wi-Fi Network Address:</div>
+              <div className="text-xs text-slate-400">Wi-Fi HTTPS Mobile Address (Unlocks Camera):</div>
               <div className="font-bold text-base text-emerald-400">
-                http://10.16.41.204:5173
+                https://10.16.41.204:5173
+              </div>
+              <div className="text-[10px] text-slate-500 pt-1">
+                (When opening on phone, tap <em>Advanced → Proceed to 10.16.41.204</em> to allow camera access)
               </div>
             </div>
 
