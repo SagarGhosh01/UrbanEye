@@ -479,8 +479,8 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
             <Smartphone className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="font-bold text-sm text-slate-100 tracking-wider">BEL MOBILE BUS EDGE</h1>
-            <p className="text-[10px] text-slate-400">YOLOv8 Real Vision • HSRP ANPR • Pothole Metric CV</p>
+            <h1 className="font-bold text-sm text-slate-100 tracking-wider">URBANEYE MOBILE EDGE</h1>
+            <p className="text-[10px] text-slate-400">UrbanEye AI Vision • HSRP ANPR • Pothole Metric CV</p>
           </div>
         </div>
 

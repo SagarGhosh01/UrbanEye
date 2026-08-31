@@ -29,13 +29,13 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-lg tracking-wider text-slate-100 uppercase">BEL UrbanEye</span>
+              <span className="font-bold text-lg tracking-wider text-slate-100 uppercase">UrbanEye</span>
               <span className="text-xs bg-sky-500/20 text-sky-400 font-semibold px-2 py-0.5 rounded border border-sky-500/30">
                 PROD v1.0
               </span>
             </div>
             <p className="text-xs text-slate-400 font-medium">
-              Bharat Electronics Limited • AI-Powered Mobile Urban Intelligence Platform
+              UrbanEye • AI-Powered Urban Perception & Transit Intelligence Platform
             </p>
           </div>
         </div>
