@@ -81,8 +81,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
   const animFrameIdRef = useRef<number | null>(null);
 
   const getBackendUrl = () => {
-    const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
-    return `http://${host}:8000/api/v1/phone/process-frame`;
+    return '/api/v1/phone/process-frame';
   };
 
   // Start Device Camera

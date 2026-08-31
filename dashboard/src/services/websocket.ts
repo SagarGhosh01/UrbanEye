@@ -7,9 +7,12 @@ class RealtimeService {
   private shouldReconnect: boolean = true;
 
   private getUrl(): string {
-    const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
-    const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${host}:8000/ws`;
+    if (typeof window !== 'undefined') {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      // Use Vite WS Proxy (same port)
+      return `${protocol}//${window.location.host}/ws`;
+    }
+    return 'ws://127.0.0.1:8000/ws';
   }
 
   constructor() {
@@ -51,21 +54,38 @@ class RealtimeService {
         console.warn('[UrbanEye WS] Connection notice:', err);
       };
     } catch (e) {
+      console.warn('[UrbanEye WS] Init error:', e);
       if (this.shouldReconnect) {
         setTimeout(() => this.connect(), this.reconnectInterval);
       }
     }
   }
 
-  public subscribe(channel: string, handler: MessageHandler) {
+  public subscribe(channel: string, handler: MessageHandler): () => void {
     if (!this.listeners.has(channel)) {
       this.listeners.set(channel, new Set());
     }
     this.listeners.get(channel)!.add(handler);
 
     return () => {
-      this.listeners.get(channel)?.delete(handler);
+      const channelListeners = this.listeners.get(channel);
+      if (channelListeners) {
+        channelListeners.delete(handler);
+      }
     };
+  }
+
+  public send(channel: string, action: string, data: any) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ channel, action, data }));
+    }
+  }
+
+  public disconnect() {
+    this.shouldReconnect = false;
+    if (this.ws) {
+      this.ws.close();
+    }
   }
 }
 

@@ -73,8 +73,7 @@ export const LiveCameraFeed: React.FC<Props> = ({
   });
 
   const getBackendUrl = () => {
-    const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
-    return `http://${host}:8000/api/v1/phone/process-frame`;
+    return '/api/v1/phone/process-frame';
   };
 
   // Start Local PC Webcam
