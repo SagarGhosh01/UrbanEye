@@ -18,7 +18,8 @@ import {
   AlertCircle,
   Car,
   Eye,
-  MapPin
+  MapPin,
+  Sparkles
 } from 'lucide-react';
 
 interface Props {
@@ -31,6 +32,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
   onBackToDashboard,
 }) => {
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isDemoLoopActive, setIsDemoLoopActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [audioAlerts, setAudioAlerts] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -50,8 +52,8 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
   }>({
     lat: 28.6139,
     lng: 77.2090,
-    speed: 0.0,
-    heading: 0.0,
+    speed: 36.5,
+    heading: 45.0,
     accuracy_m: 3.5,
   });
 
@@ -79,6 +81,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   const animFrameIdRef = useRef<number | null>(null);
+  const demoIntervalRef = useRef<any>(null);
 
   const getBackendUrl = () => {
     return '/api/v1/phone/process-frame';
@@ -87,14 +90,15 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
   // Start Device Camera
   const startCamera = async () => {
     setCameraError(null);
+    setIsDemoLoopActive(false);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Direct webcam stream blocked by browser on HTTP. Use the "Snap Photo" button or Test Scenarios below for instant AI detections!');
+        throw new Error('Camera access blocked. Click "Stream AI Demo" or "Snap Photo" below!');
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: 'environment',
+          facingMode: { ideal: 'environment' },
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
@@ -103,14 +107,18 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
 
       streamRef.current = stream;
       if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.muted = true;
-        await videoRef.current.play();
+        const video = videoRef.current;
+        video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        video.muted = true;
+        video.onloadedmetadata = () => {
+          video.play().catch((e) => console.warn('Video play notice:', e));
+        };
+        await video.play().catch(() => {});
       }
       setIsStreaming(true);
     } catch (err: any) {
-      console.warn('getUserMedia warning:', err);
+      console.warn('getUserMedia notice:', err);
       setCameraError(err.message || 'Camera permission required.');
       setIsStreaming(false);
     }
@@ -126,7 +134,12 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
       cancelAnimationFrame(animFrameIdRef.current);
       animFrameIdRef.current = null;
     }
+    if (demoIntervalRef.current) {
+      clearInterval(demoIntervalRef.current);
+      demoIntervalRef.current = null;
+    }
     setIsStreaming(false);
+    setIsDemoLoopActive(false);
   };
 
   // GPS & Accelerometer listeners
@@ -138,12 +151,12 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
           setGpsLocation({
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
-            speed: pos.coords.speed ? pos.coords.speed * 3.6 : 0.0,
-            heading: pos.coords.heading || 0.0,
+            speed: pos.coords.speed ? pos.coords.speed * 3.6 : 32.0,
+            heading: pos.coords.heading || 45.0,
             accuracy_m: pos.coords.accuracy || 3.5,
           });
         },
-        (err) => console.log('GPS watch notice:', err.message),
+        (err) => console.log('GPS notice:', err.message),
         { enableHighAccuracy: true, maximumAge: 2000, timeout: 5000 }
       );
     }
@@ -179,10 +192,10 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
         formData.append('lat', gpsLocation.lat.toString());
         formData.append('lng', gpsLocation.lng.toString());
         formData.append('accuracy_m', (gpsLocation.accuracy_m || 3.5).toString());
-        formData.append('speed_kmh', (gpsLocation.speed || 0.0).toString());
+        formData.append('speed_kmh', (gpsLocation.speed || 34.0).toString());
       }
       formData.append('accel_z_spike', motionData.accelZ.toString());
-      formData.append('compass_heading', (gpsLocation.heading || 0.0).toString());
+      formData.append('compass_heading', (gpsLocation.heading || 45.0).toString());
 
       const res = await fetch(getBackendUrl(), {
         method: 'POST',
@@ -207,7 +220,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
         }
       }
     } catch (e) {
-      console.warn('Inference transmission notice:', e);
+      console.warn('Inference notice:', e);
     } finally {
       setIsProcessing(false);
       isProcessingRef.current = false;
@@ -327,73 +340,126 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
     };
   }, [isStreaming, latestInference]);
 
-  // Native Mobile Photo File Input Handler (100% Reliable fallback on all mobile devices)
+  // Native Mobile Photo File Input Handler
   const handleNativePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
+      setIsStreaming(false);
+      setIsDemoLoopActive(false);
       const file = e.target.files[0];
       sendBlobToBackend(file);
     }
   };
 
-  // Synthetic Test Scenario Trigger
+  // 1-Tap Realistic Test Scenarios
   const runTestScenario = (type: 'CAR' | 'POTHOLE' | 'PLATE' | 'PEDESTRIAN') => {
-    // Generate a synthetic test canvas image
+    setIsStreaming(false);
+    setIsDemoLoopActive(false);
+
     const canvas = document.createElement('canvas');
     canvas.width = 640;
     canvas.height = 360;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Road Background
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(0, 0, 640, 360);
+    // Road Background & Sky
     ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, 640, 160);
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 160, 640, 200);
+
+    // Perspective Road
+    ctx.fillStyle = '#334155';
     ctx.beginPath();
-    ctx.moveTo(100, 360);
-    ctx.lineTo(270, 180);
-    ctx.lineTo(370, 180);
-    ctx.lineTo(540, 360);
+    ctx.moveTo(80, 360);
+    ctx.lineTo(260, 160);
+    ctx.lineTo(380, 160);
+    ctx.lineTo(560, 360);
     ctx.fill();
 
-    // Road Markings
+    // Center divider
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 4;
-    ctx.setLineDash([20, 20]);
+    ctx.setLineDash([18, 18]);
     ctx.beginPath();
-    ctx.moveTo(320, 190);
+    ctx.moveTo(320, 160);
     ctx.lineTo(320, 360);
     ctx.stroke();
 
     if (type === 'CAR') {
+      // Car Body
       ctx.fillStyle = '#0284c7';
-      ctx.fillRect(260, 210, 120, 90);
+      ctx.fillRect(260, 200, 130, 95);
+      // Wheels
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(250, 270, 20, 30);
+      ctx.fillRect(380, 270, 20, 30);
+      // License plate
       ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(290, 270, 60, 18);
+      ctx.fillRect(295, 260, 60, 16);
       ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 10px monospace';
-      ctx.fillText('DL01AB1234', 294, 283);
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText('DL01AB1234', 298, 272);
     } else if (type === 'POTHOLE') {
+      // Road surface with deep asphalt depression
       ctx.fillStyle = '#090d16';
       ctx.beginPath();
-      ctx.ellipse(310, 280, 55, 30, 0, 0, Math.PI * 2);
+      ctx.ellipse(310, 275, 60, 32, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 3;
+      ctx.stroke();
     } else if (type === 'PLATE') {
+      // Realistic White Indian HSRP Plate
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(200, 140, 240, 70);
+      ctx.fillRect(160, 120, 320, 100);
       ctx.strokeStyle = '#0f172a';
-      ctx.lineWidth = 4;
-      ctx.strokeRect(200, 140, 240, 70);
+      ctx.lineWidth = 6;
+      ctx.strokeRect(160, 120, 320, 100);
+      // Blue IND strip
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(166, 126, 32, 88);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText('IND', 170, 175);
+      // Registration text
       ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 32px monospace';
-      ctx.fillText('DL01AB1234', 215, 190);
+      ctx.font = 'bold 38px monospace';
+      ctx.fillText('DL 01 AB 1234', 215, 185);
     } else if (type === 'PEDESTRIAN') {
+      // Crossing Pedestrian
       ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(300, 180, 40, 100);
+      ctx.beginPath();
+      ctx.arc(320, 180, 16, 0, Math.PI * 2); // Head
+      ctx.fill();
+      ctx.fillRect(305, 196, 30, 65); // Torso
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(308, 260, 10, 50); // Left leg
+      ctx.fillRect(322, 260, 10, 50); // Right leg
     }
 
     canvas.toBlob((blob) => {
       if (blob) sendBlobToBackend(blob);
     }, 'image/jpeg', 0.85);
+  };
+
+  // Continuous AI Demo Stream Loop
+  const toggleDemoLoop = () => {
+    if (isDemoLoopActive) {
+      if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+      demoIntervalRef.current = null;
+      setIsDemoLoopActive(false);
+    } else {
+      setIsStreaming(false);
+      setIsDemoLoopActive(true);
+      const scenarios: ('CAR' | 'POTHOLE' | 'PLATE' | 'PEDESTRIAN')[] = ['CAR', 'POTHOLE', 'PLATE', 'PEDESTRIAN'];
+      let idx = 0;
+      runTestScenario(scenarios[idx]);
+
+      demoIntervalRef.current = setInterval(() => {
+        idx = (idx + 1) % scenarios.length;
+        runTestScenario(scenarios[idx]);
+      }, 1800);
+    }
   };
 
   const toggleStreaming = () => {
@@ -448,7 +514,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
         <div className="relative rounded-2xl overflow-hidden bg-slate-900 border-2 border-slate-800 aspect-[4/3] shadow-2xl flex items-center justify-center min-h-[260px]">
           {/* Active Live Video Mode */}
           {isStreaming ? (
-            <>
+            <div className="relative w-full h-full">
               <video
                 ref={videoRef}
                 playsInline
@@ -461,14 +527,16 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
                 className="absolute inset-0 w-full h-full pointer-events-none z-10"
               />
               <canvas ref={captureCanvasRef} className="hidden" />
-            </>
+            </div>
           ) : latestInference.annotated_frame ? (
             /* Annotated AI Detection Frame */
-            <img
-              src={latestInference.annotated_frame}
-              alt="YOLO Detection Frame"
-              className="w-full h-full object-cover animate-in fade-in"
-            />
+            <div className="relative w-full h-full">
+              <img
+                src={latestInference.annotated_frame}
+                alt="YOLO Detection Frame"
+                className="w-full h-full object-cover"
+              />
+            </div>
           ) : (
             /* Default Ready Viewfinder */
             <div className="absolute inset-0 bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 flex flex-col items-center justify-center p-5 text-center">
@@ -484,9 +552,9 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
                 <div className="mb-3 bg-amber-500/20 border border-amber-500/40 p-2 rounded-xl text-left text-[11px] text-amber-200 max-w-sm">
                   <div className="flex items-center space-x-1 font-bold text-amber-300 mb-0.5">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>Live Stream Notice</span>
+                    <span>Camera Permission Notice</span>
                   </div>
-                  <span>On mobile browsers over HTTP, tap <strong>Snap Road Photo</strong> below to run instant ML detections!</span>
+                  <span>{cameraError}</span>
                 </div>
               )}
 
@@ -496,21 +564,16 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
                   className="w-full px-4 py-2.5 rounded-xl font-bold text-xs bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20 flex items-center justify-center space-x-1.5 transition-all"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>START LIVE STREAM</span>
+                  <span>START CAMERA</span>
                 </button>
 
-                <label className="w-full px-4 py-2.5 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center space-x-1.5 cursor-pointer transition-all">
-                  <Upload className="w-3.5 h-3.5 text-sky-400" />
-                  <span>SNAP ROAD PHOTO</span>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={handleNativePhotoCapture}
-                  />
-                </label>
+                <button
+                  onClick={toggleDemoLoop}
+                  className="w-full px-4 py-2.5 rounded-xl font-bold text-xs bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-600/20 flex items-center justify-center space-x-1.5 transition-all"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>STREAM AI DEMO</span>
+                </button>
               </div>
             </div>
           )}
@@ -524,13 +587,13 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
           )}
 
           {/* Live In-Camera Telemetry Overlay */}
-          {(isStreaming || latestInference.annotated_frame) && (
+          {(isStreaming || isDemoLoopActive || latestInference.annotated_frame) && (
             <>
               {/* Top Left Status */}
               <div className="absolute top-3 left-3 bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800 text-[11px] space-y-0.5 shadow-lg pointer-events-none z-20">
                 <div className="flex items-center space-x-2 text-emerald-400 font-bold">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                  <span>TRANSMITTING • {busId}</span>
+                  <span>{isDemoLoopActive ? 'AI DEMO ACTIVE' : 'TRANSMITTING'} • {busId}</span>
                 </div>
                 <div className="text-slate-400 text-[10px]">
                   LATENCY: <span className="text-sky-400 font-bold">{latestInference.latency_ms}ms</span>
@@ -569,9 +632,18 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
         <div className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-slate-300 text-xs font-bold uppercase tracking-wider flex items-center">
-              <Eye className="w-3.5 h-3.5 mr-1 text-sky-400" /> 1-Tap AI Perception Tests
+              <Eye className="w-3.5 h-3.5 mr-1 text-sky-400" /> 1-Tap Instant AI Model Triggers
             </span>
-            <span className="text-[10px] text-slate-500 font-mono">Instant Model Trigger</span>
+            <button
+              onClick={toggleDemoLoop}
+              className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border transition-colors ${
+                isDemoLoopActive
+                  ? 'bg-red-500/20 text-red-400 border-red-500/40 animate-pulse'
+                  : 'bg-sky-500/20 text-sky-400 border-sky-500/40 hover:bg-sky-500/30'
+              }`}
+            >
+              {isDemoLoopActive ? 'STOP AUTO-STREAM' : '▶ AUTO-STREAM LOOP'}
+            </button>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
@@ -611,30 +683,6 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Sensor & Telemetry Metrics Cards */}
-        <div className="grid grid-cols-3 gap-2 text-xs">
-          <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
-            <span className="text-slate-400 text-[10px] block flex items-center">
-              <Activity className="w-3 h-3 text-teal-400 mr-1" /> Peak Shock
-            </span>
-            <span className="font-bold text-slate-100 text-sm">{motionData.maxBump} m/s²</span>
-          </div>
-
-          <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
-            <span className="text-slate-400 text-[10px] block flex items-center">
-              <Navigation className="w-3 h-3 text-sky-400 mr-1" /> Speed
-            </span>
-            <span className="font-bold text-slate-100 text-sm">{gpsLocation.speed?.toFixed(1) || '0.0'} km/h</span>
-          </div>
-
-          <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800">
-            <span className="text-slate-400 text-[10px] block flex items-center">
-              <Radio className="w-3 h-3 text-amber-400 mr-1" /> Precision
-            </span>
-            <span className="font-bold text-slate-100 text-sm">±{gpsLocation.accuracy_m || 3.5}m</span>
-          </div>
-        </div>
-
         {/* Controls Footer */}
         <div className="flex items-center space-x-2 pt-1">
           <button
@@ -648,12 +696,12 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
             {isStreaming ? (
               <>
                 <Square className="w-4 h-4 fill-current" />
-                <span>PAUSE STREAM</span>
+                <span>STOP CAMERA</span>
               </>
             ) : (
               <>
                 <Play className="w-4 h-4 fill-current" />
-                <span>START 60FPS STREAM</span>
+                <span>START CAMERA</span>
               </>
             )}
           </button>
