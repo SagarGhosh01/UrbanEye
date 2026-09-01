@@ -527,6 +527,15 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
                 className="absolute inset-0 w-full h-full pointer-events-none z-10"
               />
               <canvas ref={captureCanvasRef} className="hidden" />
+
+              {/* Live AI Overlay Image from YOLOv8 Backend */}
+              {latestInference.annotated_frame && (
+                <img
+                  src={latestInference.annotated_frame}
+                  alt="YOLO Detection Frame"
+                  className="absolute inset-0 w-full h-full object-cover z-20 pointer-events-none"
+                />
+              )}
             </div>
           ) : latestInference.annotated_frame ? (
             /* Annotated AI Detection Frame */

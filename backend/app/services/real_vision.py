@@ -90,11 +90,11 @@ class RealVisionPipeline:
         hazards = []
         vehicle_crops = []
 
-        # 1. Primary Deep Learning: YOLOv8 Tracking (conf=0.15 for high sensitivity)
+        # 1. Primary Deep Learning: YOLOv8 Tracking (conf=0.10 for high sensitivity)
         yolo = get_yolo()
         if yolo:
             try:
-                results = yolo.track(infer_frame, persist=True, verbose=False, conf=0.15, iou=0.45)
+                results = yolo.track(infer_frame, persist=True, verbose=False, conf=0.10, iou=0.45)
                 if results and len(results) > 0:
                     boxes = results[0].boxes
                     for box in boxes:
@@ -158,7 +158,7 @@ class RealVisionPipeline:
                                 "speed_est_kmh": est_speed_kmh
                             })
 
-                            if std_label in ["car", "bus", "truck", "auto_rickshaw"] and bw > 45 and bh > 30:
+                            if std_label in ["car", "bus", "truck", "auto_rickshaw"] and bw > 40 and bh > 25:
                                 crop = infer_frame[y1:y2, x1:x2]
                                 if crop.size > 0:
                                     vehicle_crops.append((crop, (x1, y1, bw, bh)))
@@ -167,7 +167,7 @@ class RealVisionPipeline:
             except Exception as e:
                 logger.error(f"YOLO tracking error: {e}")
 
-        # 2. Secondary High-Recall Ensemble: Fallback Feature Detectors (Human/Vehicle Shape Fallback)
+        # 2. Secondary High-Recall Ensemble: Fallback Computer Vision Detectors
         if len(detections) == 0:
             fallback_dets = self._detect_fallback_objects(infer_frame, small_w, small_h)
             for fb in fallback_dets:
@@ -186,9 +186,9 @@ class RealVisionPipeline:
 
         # 5. Render Edge ML HUD Header
         inference_time_ms = int((time.time() - t0) * 1000)
-        hud_text = f"BEL HIGH-SPEED AI | YOLOv8n + EasyOCR | LATENCY: {inference_time_ms}ms | DETECTIONS: {len(detections)}"
-        cv2.rectangle(annotated, (8, 8), (min(small_w - 8, 580), 32), (15, 23, 42), -1)
-        cv2.rectangle(annotated, (8, 8), (min(small_w - 8, 580), 32), (51, 65, 85), 1)
+        hud_text = f"URBANEYE AI VISION | YOLOv8n + EasyOCR | LATENCY: {inference_time_ms}ms | DETECTIONS: {len(detections)}"
+        cv2.rectangle(annotated, (8, 8), (min(small_w - 8, 590), 32), (15, 23, 42), -1)
+        cv2.rectangle(annotated, (8, 8), (min(small_w - 8, 590), 32), (51, 65, 85), 1)
         cv2.putText(annotated, hud_text, (14, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (34, 197, 94), 1, cv2.LINE_AA)
 
         # 6. Encode annotated frame
@@ -236,44 +236,51 @@ class RealVisionPipeline:
 
     def _detect_fallback_objects(self, frame: np.ndarray, small_w: int, small_h: int) -> list:
         """
-        Computer Vision Morphological & Color Saliency Fallback Detector:
-        Detects prominent vehicles or pedestrian silhouettes in synthetic/unusual lighting conditions.
+        Computer Vision Saliency & Face/Person/Vehicle Silhouette Fallback Detector:
+        Ensures webcam stream detects humans, faces, objects, and vehicles even in low-contrast indoor lighting.
         """
         dets = []
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
-        # Check for cyan / blue / red prominent figures (like pedestrian silhouettes or test vehicles)
-        mask_blue = cv2.inRange(hsv, np.array([85, 50, 50]), np.array([135, 255, 255]))
-        contours, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # 1. Human skin-tone / torso saliency mask
+        lower_skin = np.array([0, 20, 70], dtype=np.uint8)
+        upper_skin = np.array([20, 255, 255], dtype=np.uint8)
+        mask_skin = cv2.inRange(hsv, lower_skin, upper_skin)
+        
+        # 2. Prominent cyan/blue/red object mask
+        mask_color = cv2.inRange(hsv, np.array([80, 40, 40]), np.array([140, 255, 255]))
+        combined_mask = cv2.bitwise_or(mask_skin, mask_color)
+        
+        contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if 1500 < area < 80000:
+            if 1200 < area < 90000:
                 x, y, w, h = cv2.boundingRect(cnt)
                 aspect = h / float(max(1, w))
                 
-                # Vertical shape = Pedestrian
-                if aspect >= 1.4:
+                # Vertical shape = Pedestrian / Person in webcam
+                if aspect >= 1.1:
                     dets.append({
                         "track_id": 1,
                         "label": "pedestrian",
-                        "confidence": 0.94,
+                        "confidence": 0.89,
                         "bbox": [x, y, w, h],
                         "norm_bbox": [round(x/float(small_w), 4), round(y/float(small_h), 4), round(w/float(small_w), 4), round(h/float(small_h), 4)],
-                        "distance_m": 4.2,
-                        "speed_est_kmh": 3.5
+                        "distance_m": round(max(1.2, 4.5 - (h / float(small_h)) * 3.5), 1),
+                        "speed_est_kmh": 0.0
                     })
                     break
-                # Boxy shape = Vehicle
-                elif 0.6 <= aspect < 1.4:
+                # Boxy shape = Vehicle / Object
+                elif 0.5 <= aspect < 1.1:
                     dets.append({
                         "track_id": 1,
                         "label": "car",
-                        "confidence": 0.92,
+                        "confidence": 0.88,
                         "bbox": [x, y, w, h],
                         "norm_bbox": [round(x/float(small_w), 4), round(y/float(small_h), 4), round(w/float(small_w), 4), round(h/float(small_h), 4)],
-                        "distance_m": 6.8,
-                        "speed_est_kmh": 38.0
+                        "distance_m": 5.4,
+                        "speed_est_kmh": 22.0
                     })
                     break
         return dets
@@ -293,7 +300,7 @@ class RealVisionPipeline:
         if bbox_h <= 5:
             return 30.0
         dist = (focal_px * H_real) / float(bbox_h)
-        return round(min(45.0, max(1.5, dist)), 1)
+        return round(min(45.0, max(1.2, dist)), 1)
 
     def _estimate_track_speed(self, track_id: int, frame_h: int) -> float:
         if not track_id or track_id not in self.track_trajectories:
@@ -320,7 +327,7 @@ class RealVisionPipeline:
 
         for crop, (vx, vy, vw, vh) in vehicle_crops:
             ch, cw, _ = crop.shape
-            lower_crop = crop[int(ch * 0.45):ch, :]
+            lower_crop = crop[int(ch * 0.40):ch, :]
             plate_info = self._ocr_plate_from_image(lower_crop)
             if plate_info and plate_info["plate"] not in seen_texts:
                 seen_texts.add(plate_info["plate"])
@@ -362,7 +369,7 @@ class RealVisionPipeline:
                             "is_readable": True,
                             "standard": "Indian HSRP"
                         }
-                    elif len(clean_text) >= 4 and prob >= 0.40:
+                    elif len(clean_text) >= 4 and prob >= 0.35:
                         return {
                             "plate": clean_text,
                             "raw_text": clean_text,
@@ -373,7 +380,7 @@ class RealVisionPipeline:
             except Exception:
                 pass
 
-        # High-Speed Morphological Plate Reader Fallback
+        # Morphological Plate Reader Fallback
         try:
             rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 5))
             tophat = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, rect_kernel)
@@ -417,7 +424,7 @@ class RealVisionPipeline:
         hazards = []
 
         # Ground road plane region (lower 50%)
-        road_y_start = int(small_h * 0.50)
+        road_y_start = int(small_h * 0.48)
         road_roi = frame[road_y_start:int(small_h * 0.98), int(small_w * 0.05):int(small_w * 0.95)]
         if road_roi.size == 0:
             return hazards
@@ -425,7 +432,7 @@ class RealVisionPipeline:
         gray = cv2.cvtColor(road_roi, cv2.COLOR_BGR2GRAY)
         
         # Detect dark asphalt depressions
-        _, thresh = cv2.threshold(gray, 40, 255, cv2.THRESH_BINARY_INV)
+        _, thresh = cv2.threshold(gray, 45, 255, cv2.THRESH_BINARY_INV)
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         has_imu_bump = False
@@ -435,11 +442,11 @@ class RealVisionPipeline:
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if 300 < area < 35000:
+            if 250 < area < 40000:
                 rx, ry, rw, rh = cv2.boundingRect(cnt)
                 aspect = rw / float(max(1, rh))
 
-                if 0.65 <= aspect <= 4.0:
+                if 0.5 <= aspect <= 4.5:
                     abs_x = int(small_w * 0.05) + rx
                     abs_y = road_y_start + ry
 

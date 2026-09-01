@@ -547,12 +547,12 @@ export const LiveCameraFeed: React.FC<Props> = ({
               />
               <canvas ref={localCaptureCanvasRef} className="hidden" />
 
-              {/* If video element is still loading, show last annotated frame as fallback */}
+              {/* Live AI Overlay Image from YOLOv8 Backend */}
               {latestLocalInference.annotated_frame && (
                 <img
                   src={latestLocalInference.annotated_frame}
                   alt="Processed Frame"
-                  className="absolute inset-0 w-full h-full object-cover -z-1 opacity-90"
+                  className="absolute inset-0 w-full h-full object-cover z-20 pointer-events-none"
                 />
               )}
             </div>
