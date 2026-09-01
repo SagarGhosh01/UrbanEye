@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt* backend/requirements.txt* ./
-RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; elif [ -f backend/requirements.txt ]; then pip install --no-cache-dir -r backend/requirements.txt; fi
+RUN if [ -f requirements.txt ]; then pip install --no-cache-dir --root-user-action=ignore -r requirements.txt; elif [ -f backend/requirements.txt ]; then pip install --no-cache-dir --root-user-action=ignore -r backend/requirements.txt; fi
 
 COPY backend/ ./
 COPY . ./
