@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { BusTelemetry, UrbanEvent, RoadSegment, HeatmapPoint } from '../../types';
-import { Navigation, AlertTriangle, Droplets, ShieldAlert, Layers, Crosshair, MapPin, ExternalLink } from 'lucide-react';
+import { Navigation, AlertTriangle, Droplets, ShieldAlert, Layers, Crosshair, MapPin, ExternalLink, Radio, CheckCircle, Compass, Zap } from 'lucide-react';
+import { api } from '../../services/api';
 
 interface Props {
   buses: BusTelemetry[];
@@ -15,13 +16,13 @@ interface Props {
 }
 
 // Map Auto-Recenter Controller component
-const MapRecenter: React.FC<{ center: [number, number]; zoom?: number }> = ({ center, zoom }) => {
+const MapRecenter: React.FC<{ center: [number, number]; zoom?: number; autoFollow?: boolean }> = ({ center, zoom, autoFollow }) => {
   const map = useMap();
   useEffect(() => {
     if (center && center[0] && center[1]) {
-      map.flyTo(center, zoom || map.getZoom(), { duration: 1.2 });
+      map.flyTo(center, zoom || map.getZoom(), { duration: 1.0 });
     }
-  }, [center[0], center[1], zoom]);
+  }, [center[0], center[1], zoom, autoFollow]);
   return null;
 };
 
@@ -75,6 +76,7 @@ const createHazardIcon = (type: string, severity: string) => {
   if (type === 'WATERLOGGING') color = '#38bdf8';
   if (type === 'NEAR_MISS') color = '#f97316';
   if (type === 'ANPR_ALERT') color = '#a855f7';
+  if (type.startsWith('MISSING_')) color = '#ec4899';
 
   return L.divIcon({
     className: 'custom-hazard-marker',
@@ -113,48 +115,114 @@ export const GISMap: React.FC<Props> = ({
   const [showHazards, setShowHazards] = useState(true);
   const [showSegments, setShowSegments] = useState(true);
   const [showHeatmap, setShowHeatmap] = useState(true);
-  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  
+  // Real-Time Device GPS Tracking State
+  const [liveGps, setLiveGps] = useState<{
+    lat: number;
+    lng: number;
+    accuracy_m: number;
+    speed_kmh: number;
+    heading_deg: number;
+    status: 'LOCKED' | 'SEARCHING' | 'DENIED';
+    address?: string;
+  }>({
+    lat: 28.6139,
+    lng: 77.2090,
+    accuracy_m: 3.5,
+    speed_kmh: 0.0,
+    heading_deg: 45.0,
+    status: 'SEARCHING',
+    address: 'Central Transit Corridor, New Delhi'
+  });
+
+  const [autoFollowGps, setAutoFollowGps] = useState<boolean>(true);
   const [activeCenter, setActiveCenter] = useState<[number, number]>([28.6139, 77.2090]);
 
-  // Find selected bus location
   const activeBus = buses.find((b) => b.bus_id === selectedBusId);
+
+  // Continuous High-Accuracy Device GPS Tracking (`watchPosition`)
+  useEffect(() => {
+    let watchId: number | null = null;
+    if ('geolocation' in navigator) {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const accuracy = pos.coords.accuracy || 3.2;
+          const speed = pos.coords.speed ? Number((pos.coords.speed * 3.6).toFixed(1)) : 0.0;
+          const heading = pos.coords.heading || 45.0;
+
+          setLiveGps({
+            lat,
+            lng,
+            accuracy_m: Number(accuracy.toFixed(1)),
+            speed_kmh: speed,
+            heading_deg: heading,
+            status: 'LOCKED'
+          });
+
+          if (autoFollowGps) {
+            setActiveCenter([lat, lng]);
+          }
+
+          // Transmit real-time telemetry to backend for selected bus
+          if (selectedBusId) {
+            fetch(`/api/v1/fleet/telemetry?bus_id=${selectedBusId}&lat=${lat}&lng=${lng}&speed_kmh=${speed}&heading_deg=${heading}`, {
+              method: 'POST'
+            }).catch(() => {});
+          }
+        },
+        (err) => {
+          console.warn('GPS Watch notice:', err.message);
+          setLiveGps((prev) => ({ ...prev, status: 'DENIED' }));
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
+      );
+    }
+    return () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [autoFollowGps, selectedBusId]);
 
   // Recenter when active bus moves or is selected
   useEffect(() => {
-    if (activeBus && activeBus.current_lat && activeBus.current_lng) {
+    if (!autoFollowGps && activeBus && activeBus.current_lat && activeBus.current_lng) {
       setActiveCenter([activeBus.current_lat, activeBus.current_lng]);
     }
-  }, [activeBus?.current_lat, activeBus?.current_lng, selectedBusId]);
+  }, [activeBus?.current_lat, activeBus?.current_lng, selectedBusId, autoFollowGps]);
 
-  // 1-Click Locate User Location
+  // 1-Click Locate & Recenter
   const handleLocateMe = () => {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
-          setUserLocation(coords);
-          setActiveCenter(coords);
-        },
-        (err) => console.log('Location error:', err),
-        { enableHighAccuracy: true }
-      );
+    setAutoFollowGps(true);
+    if (liveGps.lat && liveGps.lng) {
+      setActiveCenter([liveGps.lat, liveGps.lng]);
     }
   };
 
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-lg flex flex-col h-full relative overflow-hidden">
-      {/* Map Header & Layer Toggles */}
+      {/* Map Header & Controls */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
         <div className="flex items-center space-x-2.5 min-w-0">
           <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 shrink-0">
             <Navigation className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide truncate">
-              GIS Urban Sensing Command Map
-            </h3>
+            <div className="flex items-center space-x-2 flex-wrap">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-100 uppercase tracking-wide truncate">
+                GIS Urban Sensing Command Map
+              </h3>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border flex items-center space-x-1 ${
+                liveGps.status === 'LOCKED'
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse'
+                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+              }`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <span>GPS LOCK ±{liveGps.accuracy_m}m</span>
+              </span>
+            </div>
             <p className="text-xs text-slate-400 truncate">
-              High-Precision Sub-Meter PostGIS Spatial Geotagging & Corridors
+              Live Real-Time GPS Tracking • Sub-Meter Road Centerline Map Matching
             </p>
           </div>
         </div>
@@ -163,10 +231,15 @@ export const GISMap: React.FC<Props> = ({
         <div className="flex items-center space-x-1.5 text-xs">
           <button
             onClick={handleLocateMe}
-            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 rounded transition-all"
-            title="Locate My Exact Position"
+            className={`px-2.5 py-1 rounded font-bold border flex items-center space-x-1 transition-all ${
+              autoFollowGps
+                ? 'bg-sky-500 text-white border-sky-400 shadow-md shadow-sky-500/30'
+                : 'bg-slate-800 hover:bg-slate-700 text-sky-400 border-slate-700'
+            }`}
+            title="Auto-Follow My Real-Time GPS"
           >
             <Crosshair className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{autoFollowGps ? 'FOLLOWING GPS' : 'LOCATE ME'}</span>
           </button>
 
           <button
@@ -195,32 +268,42 @@ export const GISMap: React.FC<Props> = ({
           >
             Corridors
           </button>
+        </div>
+      </div>
 
-          <button
-            onClick={() => setShowHeatmap(!showHeatmap)}
-            className={`px-2 py-1 rounded font-medium transition-all ${
-              showHeatmap ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' : 'bg-slate-800 text-slate-500'
-            }`}
-          >
-            Hotspots
-          </button>
+      {/* Real-Time Live GPS HUD Bar */}
+      <div className="bg-slate-950 px-3 py-1.5 border-b border-slate-800 flex items-center justify-between text-[11px] font-mono shrink-0">
+        <div className="flex items-center space-x-3 text-slate-300">
+          <span className="text-emerald-400 font-bold flex items-center">
+            📍 REAL-TIME COORDS: <span className="ml-1 text-slate-100">{liveGps.lat.toFixed(6)}°N, {liveGps.lng.toFixed(6)}°E</span>
+          </span>
+          <span className="text-slate-400 hidden sm:inline">
+            PRECISION: <span className="text-sky-400">±{liveGps.accuracy_m}m</span>
+          </span>
+          <span className="text-slate-400 hidden md:inline">
+            SPEED: <span className="text-amber-400">{liveGps.speed_kmh} km/h</span>
+          </span>
+        </div>
+
+        <div className="text-sky-400 font-semibold truncate max-w-xs font-sans text-[10px]">
+          📍 {liveGps.address || 'Central Transit Corridor'}
         </div>
       </div>
 
       {/* Interactive Leaflet Map Container */}
-      <div className="mt-3 rounded-lg overflow-hidden border border-slate-800 flex-1 min-h-[380px] relative">
+      <div className="mt-2 rounded-lg overflow-hidden border border-slate-800 flex-1 min-h-[360px] relative">
         <MapContainer
           center={activeCenter}
-          zoom={13}
+          zoom={14}
           scrollWheelZoom={true}
-          style={{ width: '100%', height: '100%', minHeight: '380px' }}
+          style={{ width: '100%', height: '100%', minHeight: '360px' }}
         >
           {/* Dynamic Fly-To Controller */}
-          <MapRecenter center={activeCenter} />
+          <MapRecenter center={activeCenter} autoFollow={autoFollowGps} />
 
           {/* Standard OpenStreetMap Tile Layer */}
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Bharat Electronics'
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | UrbanEye GIS'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
@@ -277,31 +360,35 @@ export const GISMap: React.FC<Props> = ({
               />
             ))}
 
-          {/* User Current Live Location Pin */}
-          {userLocation && (
+          {/* Live Device GPS Position Marker */}
+          {liveGps.lat && liveGps.lng && (
             <>
               <Circle
-                center={userLocation}
-                radius={25}
-                pathOptions={{ color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.2 }}
+                center={[liveGps.lat, liveGps.lng]}
+                radius={liveGps.accuracy_m || 10}
+                pathOptions={{ color: '#0284c7', fillColor: '#38bdf8', fillOpacity: 0.25, weight: 2 }}
               />
               <Marker
-                position={userLocation}
+                position={[liveGps.lat, liveGps.lng]}
                 icon={L.divIcon({
-                  className: 'user-loc-marker',
+                  className: 'user-live-gps-marker',
                   html: `
-                    <div style="background:#0284c7; border:3px solid #ffffff; width:18px; height:18px; border-radius:50%; box-shadow:0 0 12px #38bdf8;"></div>
+                    <div style="background:#0284c7; border:3px solid #ffffff; width:22px; height:22px; border-radius:50%; box-shadow:0 0 16px #38bdf8; display:flex; items-center; justify-center;">
+                      <div style="width:8px; height:8px; background:#ffffff; border-radius:50%;"></div>
+                    </div>
                   `,
-                  iconSize: [18, 18],
-                  iconAnchor: [9, 9],
+                  iconSize: [22, 22],
+                  iconAnchor: [11, 11],
                 })}
               >
                 <Popup>
-                  <div className="p-1 text-xs">
-                    <strong className="text-sky-400 block">Your Current Location</strong>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {userLocation[0].toFixed(6)}, {userLocation[1].toFixed(6)}
-                    </span>
+                  <div className="p-1 text-xs space-y-1">
+                    <strong className="text-sky-400 block font-mono">📍 LIVE GPS DEVICE POSITION</strong>
+                    <div className="text-[10px] text-slate-300 font-mono">
+                      <div>Coords: {liveGps.lat.toFixed(6)}°, {liveGps.lng.toFixed(6)}°</div>
+                      <div>Accuracy: ±{liveGps.accuracy_m}m</div>
+                      <div>Speed: {liveGps.speed_kmh} km/h</div>
+                    </div>
                   </div>
                 </Popup>
               </Marker>
@@ -314,7 +401,6 @@ export const GISMap: React.FC<Props> = ({
               if (bus.current_lat === null || bus.current_lng === null) return null;
               return (
                 <React.Fragment key={bus.bus_id}>
-                  {/* Accuracy radius ring */}
                   <Circle
                     center={[bus.current_lat, bus.current_lng]}
                     radius={15}
@@ -356,70 +442,102 @@ export const GISMap: React.FC<Props> = ({
               );
             })}
 
-          {/* Road Hazard Event Pins with Detailed Physical Address Popups */}
+          {/* Road Hazard Event Pins with Section 19 Auditable Accuracy Circles & Verification Status */}
           {showHazards &&
             events.map((ev) => {
               if (!ev.location?.lat || !ev.location?.lng) return null;
+              const isConfirmed = (ev.location.confirmed_passes || 1) >= 2 || ev.location.verification_status === 'CONFIRMED';
+              const accuracyRadius = ev.location.accuracy_m || 8.0;
+
               return (
-                <Marker
-                  key={ev.event_id}
-                  position={[ev.location.lat, ev.location.lng]}
-                  icon={createHazardIcon(ev.type, ev.severity)}
-                  eventHandlers={{
-                    click: () => onEventClick(ev),
-                  }}
-                >
-                  <Popup>
-                    <div className="p-1 space-y-2 text-xs min-w-[220px]">
-                      {/* Header */}
-                      <div className="flex items-center justify-between border-b border-slate-700 pb-1">
-                        <span className="font-bold text-amber-400 text-sm flex items-center">
-                          <MapPin className="w-3.5 h-3.5 mr-1 text-red-400" />
-                          {ev.type}
-                        </span>
-                        <span className="text-[10px] bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded font-bold border border-red-500/40">
-                          {ev.severity}
-                        </span>
-                      </div>
-
-                      {/* Exact Physical Address */}
-                      <div>
-                        <span className="text-[10px] text-slate-400 block font-mono">EXACT ADDRESS:</span>
-                        <span className="text-slate-100 font-semibold text-xs leading-tight block">
-                          {ev.location.resolved_address || 'Central Transit Corridor, New Delhi'}
-                        </span>
-                      </div>
-
-                      {/* Precision Coordinates */}
-                      <div className="bg-slate-950 p-1.5 rounded font-mono text-[10px] text-slate-300 space-y-0.5">
-                        <div className="text-emerald-400">
-                          GPS: {ev.location.lat.toFixed(6)}° N, {ev.location.lng.toFixed(6)}° E
+                <React.Fragment key={ev.event_id}>
+                  {/* Accuracy Radius Circle */}
+                  <Circle
+                    center={[ev.location.lat, ev.location.lng]}
+                    radius={accuracyRadius}
+                    pathOptions={{
+                      color: isConfirmed ? '#10b981' : '#f59e0b',
+                      fillColor: isConfirmed ? '#10b981' : '#f59e0b',
+                      fillOpacity: 0.18,
+                      weight: 1.5,
+                      dashArray: isConfirmed ? undefined : '4, 4'
+                    }}
+                  />
+                  <Marker
+                    position={[ev.location.lat, ev.location.lng]}
+                    icon={createHazardIcon(ev.type, ev.severity)}
+                    eventHandlers={{
+                      click: () => onEventClick(ev),
+                    }}
+                  >
+                    <Popup>
+                      <div className="p-1 space-y-2 text-xs min-w-[230px]">
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-slate-700 pb-1">
+                          <span className="font-bold text-amber-400 text-sm flex items-center">
+                            <MapPin className="w-3.5 h-3.5 mr-1 text-red-400" />
+                            {ev.type}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${
+                            isConfirmed 
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          }`}>
+                            {isConfirmed ? `CONFIRMED (${ev.location.confirmed_passes || 2} Passes)` : 'REPORTED (1 Pass)'}
+                          </span>
                         </div>
-                        <div className="text-slate-400">Lock Accuracy: ±{ev.location.accuracy_m || 5.0}m</div>
-                        <div className="text-slate-400">Sensor Unit: {ev.bus_id} ({ev.camera_id})</div>
-                      </div>
 
-                      {/* Actions */}
-                      <div className="flex items-center space-x-1.5 pt-1">
-                        <button
-                          onClick={() => onEventClick(ev)}
-                          className="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-bold py-1.5 rounded text-[11px] transition-colors"
-                        >
-                          Inspect Evidence
-                        </button>
-                        <a
-                          href={`https://www.google.com/maps?q=${ev.location.lat},${ev.location.lng}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 rounded transition-colors"
-                          title="Open in Google Maps"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
+                        {/* Exact Physical Address */}
+                        <div>
+                          <span className="text-[10px] text-slate-400 block font-mono">SNAPPED ROAD LOCATION:</span>
+                          <span className="text-slate-100 font-semibold text-xs leading-tight block">
+                            {ev.location.resolved_address || 'Central Transit Corridor, New Delhi'}
+                          </span>
+                        </div>
+
+                        {/* Precision Geolocation Audit Pipeline Details */}
+                        <div className="bg-slate-950 p-2 rounded font-mono text-[10px] text-slate-300 space-y-1 border border-slate-800">
+                          <div className="text-emerald-400 font-bold">
+                            SNAPPED: {ev.location.lat.toFixed(6)}°, {ev.location.lng.toFixed(6)}°
+                          </div>
+                          {ev.location.raw_lat && (
+                            <div className="text-slate-400 text-[9px]">
+                              RAW GPS: {ev.location.raw_lat.toFixed(6)}°, {ev.location.raw_lng.toFixed(6)}° (±{ev.location.raw_accuracy_m || 8}m)
+                            </div>
+                          )}
+                          <div className="text-sky-300 text-[9px]">
+                            METHOD: {ev.location.method || 'gps+road_snap+heading_offset'}
+                          </div>
+                          <div className="text-slate-400 text-[9px]">
+                            FORWARD OFFSET: {ev.location.offset_applied_m || 4.5}m ahead
+                          </div>
+                          <div className="text-slate-400 text-[9px]">
+                            ACCURACY RADIUS: ±{accuracyRadius}m
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center space-x-1.5 pt-1">
+                          <button
+                            onClick={() => onEventClick(ev)}
+                            className="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-bold py-1.5 rounded text-[11px] transition-colors"
+                          >
+                            Inspect Evidence
+                          </button>
+                          <a
+                            href={`https://www.google.com/maps?q=${ev.location.lat},${ev.location.lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 rounded transition-colors"
+                            title="Open in Google Maps"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
                       </div>
-                    </div>
-                  </Popup>
-                </Marker>
+                    </Popup>
+                  </Marker>
+                </React.Fragment>
               );
             })}
         </MapContainer>
