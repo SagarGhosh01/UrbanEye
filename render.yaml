@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: urbaneye-backend
+    runtime: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    region: singapore
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./urban_eye.db
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PORT
+        value: 8000
