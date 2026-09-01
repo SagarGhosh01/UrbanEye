@@ -9,10 +9,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./requirements.txt
+# Copy backend requirements when Docker context is root (.)
+COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy backend source code into /app
+COPY backend/ .
 
 ENV PORT=8000
 EXPOSE 8000
