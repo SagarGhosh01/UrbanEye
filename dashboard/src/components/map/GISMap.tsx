@@ -500,7 +500,7 @@ export const GISMap: React.FC<Props> = ({
                           <div className="text-emerald-400 font-bold">
                             SNAPPED: {ev.location.lat.toFixed(6)}°, {ev.location.lng.toFixed(6)}°
                           </div>
-                          {ev.location.raw_lat && (
+                          {ev.location.raw_lat && ev.location.raw_lng && (
                             <div className="text-slate-400 text-[9px]">
                               RAW GPS: {ev.location.raw_lat.toFixed(6)}°, {ev.location.raw_lng.toFixed(6)}° (±{ev.location.raw_accuracy_m || 8}m)
                             </div>

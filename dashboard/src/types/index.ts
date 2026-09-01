@@ -11,6 +11,13 @@ export interface LocationData {
   city?: string | null;
   postal_code?: string | null;
   maps_url?: string | null;
+  confirmed_passes?: number;
+  verification_status?: string;
+  raw_lat?: number;
+  raw_lng?: number;
+  raw_accuracy_m?: number;
+  method?: string;
+  offset_applied_m?: number;
 }
 
 export interface EvidenceData {
