@@ -90,10 +90,9 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
   // Start Device Camera
   const startCamera = async () => {
     setCameraError(null);
-    setIsDemoLoopActive(false);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera access blocked. Click "Stream AI Demo" or "Snap Photo" below!');
+        throw new Error('Camera access restricted in plain HTTP mode. Streaming AI Demo Vision Feed instead!');
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -117,10 +116,20 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
         await video.play().catch(() => {});
       }
       setIsStreaming(true);
+
+      // Verify video frame delivery after 1.2s; if video dimensions are 0, launch AI stream fallback
+      setTimeout(() => {
+        if (videoRef.current && (videoRef.current.videoWidth === 0 || videoRef.current.paused)) {
+          console.warn('Camera video zero width; switching to Continuous AI Stream');
+          toggleDemoLoop();
+        }
+      }, 1200);
     } catch (err: any) {
       console.warn('getUserMedia notice:', err);
       setCameraError(err.message || 'Camera permission required.');
       setIsStreaming(false);
+      // Auto-fallback to Continuous AI Stream so screen never goes black
+      toggleDemoLoop();
     }
   };
 

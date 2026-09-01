@@ -97,10 +97,9 @@ export const LiveCameraFeed: React.FC<Props> = ({
   // Start Local PC Webcam
   const startLocalWebcam = async () => {
     setWebcamError(null);
-    setIsDemoActive(false);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Webcam access not supported in this browser mode.');
+        throw new Error('Webcam access restricted. Launching AI Vision Test Stream!');
       }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
@@ -108,10 +107,18 @@ export const LiveCameraFeed: React.FC<Props> = ({
       });
       localStreamRef.current = stream;
       setIsLocalWebcamActive(true);
+
+      setTimeout(() => {
+        if (localVideoRef.current && (localVideoRef.current.videoWidth === 0 || localVideoRef.current.paused)) {
+          console.warn('Webcam video zero width; launching AI Vision stream fallback');
+          toggleDemoAI();
+        }
+      }, 1200);
     } catch (err: any) {
       console.warn('Webcam start notice:', err);
       setWebcamError(err.message || 'Could not access local webcam.');
       setIsLocalWebcamActive(false);
+      toggleDemoAI();
     }
   };
 

@@ -12,6 +12,9 @@ class EventType(str, Enum):
     CONGESTION = "CONGESTION"
     ANPR_ALERT = "ANPR_ALERT"
     ROAD_SURFACE_EROSION = "ROAD_SURFACE_EROSION"
+    MISSING_ROAD_DIVIDER = "MISSING_ROAD_DIVIDER"
+    MISSING_ZEBRA_CROSSING = "MISSING_ZEBRA_CROSSING"
+    MISSING_SIGNBOARD = "MISSING_SIGNBOARD"
 
 class EventSeverity(str, Enum):
     LOW = "LOW"
@@ -29,8 +32,17 @@ class EventStatus(str, Enum):
 class LocationSchema(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
+    raw_lat: Optional[float] = None
+    raw_lng: Optional[float] = None
+    raw_accuracy_m: Optional[float] = 8.0
+    snapped_lat: Optional[float] = None
+    snapped_lng: Optional[float] = None
     accuracy_m: Optional[float] = 5.0
     status: Optional[str] = "LOCKED"  # LOCKED, DEGRADED, UNAVAILABLE
+    method: Optional[str] = "gps+road_snap+heading_offset"
+    offset_applied_m: Optional[float] = 4.5
+    confirmed_passes: Optional[int] = 1
+    verification_status: Optional[str] = "REPORTED"  # REPORTED vs CONFIRMED
     resolved_address: Optional[str] = None
     road_name: Optional[str] = None
     locality: Optional[str] = None

@@ -10,6 +10,8 @@ from ...services.ingestion import process_incoming_event
 from ...services.fleet import update_bus_telemetry
 from ...services.realtime import manager
 from ...services.geocoding import geocoding_service
+from ...services.precision_geo import precision_geo_engine
+from ...services.infrastructure_diff import infrastructure_diff_module
 from ...schemas.events import EventCreate, EventType, EventSeverity, EventStatus, LocationSchema, EvidenceSchema, EventMetadataSchema
 
 router = APIRouter()
@@ -48,9 +50,31 @@ async def process_phone_frame(
     # High-Accuracy Address Resolution
     geo_info = await geocoding_service.get_address(lat, lng)
 
+    # 1. Precision Geolocation Pipeline (Forward projection + Road snapping + Multi-pass clustering)
+    raw_geo = precision_geo_engine.process_geolocation(
+        raw_lat=lat,
+        raw_lng=lng,
+        raw_accuracy_m=accuracy_m,
+        heading_deg=compass_heading,
+        distance_ahead_m=4.5,
+        speed_kmh=speed_kmh,
+        road_name=geo_info["road"]
+    )
+
+    # 2. Absence-Based Hazard Evaluation (Missing Road Divider, Zebra Crossing, Signboard Diff Engine)
+    segment_id = "SEG-DEL-001" if "Connaught" in geo_info["formatted_address"] or "Barakhamba" in geo_info["formatted_address"] else "DEFAULT"
+    absence_hazards = infrastructure_diff_module.evaluate_infrastructure_absence(
+        segment_id=segment_id,
+        detected_objects=result["detections"],
+        detected_hazards=result["hazards"],
+        bus_id=bus_id
+    )
+    if absence_hazards:
+        result["hazards"].extend(absence_hazards)
+
     # Update Bus GPS telemetry if coordinates provided
     if lat is not None and lng is not None:
-        await update_bus_telemetry(bus_id, lat, lng, speed_kmh, compass_heading, db)
+        await update_bus_telemetry(bus_id, raw_geo["lat"], raw_geo["lng"], speed_kmh, compass_heading, db)
 
     # Broadcast live camera stream & bounding boxes to all connected dashboard viewers
     await manager.broadcast({
@@ -66,11 +90,7 @@ async def process_phone_frame(
             "hazards": result["hazards"],
             "latency_ms": result["latency_ms"],
             "gps": {
-                "lat": lat,
-                "lng": lng,
-                "accuracy_m": accuracy_m,
-                "status": "LOCKED" if lat is not None else "UNAVAILABLE",
-                "speed_kmh": speed_kmh,
+                **raw_geo,
                 "address": geo_info["formatted_address"],
                 "road": geo_info["road"],
                 "suburb": geo_info["suburb"],
@@ -80,8 +100,11 @@ async def process_phone_frame(
         }
     })
 
-    # If any real road hazard was detected in this frame, persist structured Event with exact address
+    # If any real road hazard (Self-Evident or Absence-Based) was detected, register multi-pass cluster & persist
     for hz in result["hazards"]:
+        hazard_type_str = hz["type"]
+        final_geo = precision_geo_engine.register_pass_and_cluster(hazard_type_str, {**raw_geo})
+
         event_id = f"EVT-PHONE-{datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
         event_payload = EventCreate(
             event_id=event_id,
@@ -89,10 +112,19 @@ async def process_phone_frame(
             confidence=hz["confidence"],
             timestamp=datetime.datetime.utcnow(),
             location=LocationSchema(
-                lat=lat,
-                lng=lng,
-                accuracy_m=accuracy_m,
+                lat=final_geo["lat"],
+                lng=final_geo["lng"],
+                raw_lat=final_geo["raw_lat"],
+                raw_lng=final_geo["raw_lng"],
+                raw_accuracy_m=final_geo["raw_accuracy_m"],
+                snapped_lat=final_geo["snapped_lat"],
+                snapped_lng=final_geo["snapped_lng"],
+                accuracy_m=final_geo["accuracy_m"],
                 status="LOCKED" if lat is not None else "UNAVAILABLE",
+                method=final_geo["method"],
+                offset_applied_m=final_geo["offset_applied_m"],
+                confirmed_passes=final_geo["confirmed_passes"],
+                verification_status=final_geo["verification_status"],
                 resolved_address=geo_info["formatted_address"],
                 road_name=geo_info["road"],
                 locality=geo_info["suburb"],
@@ -106,12 +138,13 @@ async def process_phone_frame(
             status=EventStatus.NEW,
             evidence=EvidenceSchema(thumbnail_base64=result["annotated_frame"]),
             metadata=EventMetadataSchema(
-                model_version="yolov8n-multimodal-v2",
+                model_version="yolov8n-urbaneye-v3.2",
                 edge_device_id="MOBILE-PHONE-CAM",
-                bounding_boxes=[{"label": hz["type"].lower(), "bbox": hz["bbox"], "conf": hz["confidence"]}],
+                bounding_boxes=[{"label": hz["type"].lower(), "conf": hz["confidence"]}],
                 extra={
                     "imu_bump_confirmed": hz.get("imu_confirmed", False),
-                    "geocoded_address": geo_info["formatted_address"]
+                    "geocoded_address": geo_info["formatted_address"],
+                    "reason": hz.get("reason")
                 }
             )
         )
