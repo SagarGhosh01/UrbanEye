@@ -11,9 +11,21 @@ from .api.routes import auth, events, fleet, analytics, anpr, simulator, phone, 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("UrbanEye.Backend")
 
+import os
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing UrbanEye Database and Seed Data...")
+    db_url = settings.DATABASE_URL
+    if "sqlite" in db_url:
+        try:
+            db_path = db_url.split("///")[-1]
+            db_dir = os.path.dirname(db_path)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not prepare database directory: {e}")
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
