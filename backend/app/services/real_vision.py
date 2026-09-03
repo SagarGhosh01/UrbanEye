@@ -13,8 +13,8 @@ logger = logging.getLogger("UrbanEye.RealVision")
 yolo_model = None
 ocr_reader = None
 
-# Indian Vehicle Registration Plate Regex Standard
-INDIAN_PLATE_REGEX = re.compile(r'([A-Z]{2})[ -]?([0-9]{1,2})[ -]?([A-Z]{0,3})[ -]?([0-9]{4})')
+# Indian Vehicle Registration Plate Regex Standard (e.g. DL-01-AB-1234, RJ-14-CV-0002, MH-12-DE-5678, BH-22-AA-9999)
+INDIAN_PLATE_REGEX = re.compile(r'([A-Z]{2})[ -]?([0-9]{1,2})[ -]?([A-Z]{1,3})[ -]?([0-9]{4})')
 
 def get_yolo():
     global yolo_model
@@ -342,7 +342,7 @@ class RealVisionPipeline:
         found_plates = []
         seen_texts = set()
 
-        # Run ANPR strictly on detected vehicle bounding box crops
+        # 1. Run ANPR on detected vehicle bounding box crops
         for crop, (vx, vy, vw, vh) in vehicle_crops:
             ch, cw, _ = crop.shape
             lower_crop = crop[int(ch * 0.35):ch, :]
@@ -351,6 +351,14 @@ class RealVisionPipeline:
                 seen_texts.add(plate_info["plate"])
                 found_plates.append(plate_info)
                 self._draw_plate_badge(annotated, plate_info, vx, vy + vh, small_w, small_h)
+
+        # 2. If no vehicle crop matched, scan full frame for genuine Indian Registration plates (e.g. RJ14CV0002)
+        if len(found_plates) == 0:
+            plate_info = self._ocr_plate_from_image(frame)
+            if plate_info and plate_info.get("standard") == "Indian HSRP" and plate_info["plate"] not in seen_texts:
+                seen_texts.add(plate_info["plate"])
+                found_plates.append(plate_info)
+                self._draw_plate_badge(annotated, plate_info, int(small_w * 0.25), int(small_h * 0.75), small_w, small_h)
 
         return found_plates
 
@@ -379,7 +387,7 @@ class RealVisionPipeline:
                             "is_readable": True,
                             "standard": "Indian HSRP"
                         }
-                    elif len(clean_text) >= 5 and prob >= 0.50:
+                    elif len(clean_text) >= 6 and prob >= 0.55:
                         return {
                             "plate": clean_text,
                             "raw_text": clean_text,
@@ -506,37 +514,41 @@ class RealVisionPipeline:
 
     def _detect_waterlogging_puddles(self, frame: np.ndarray, annotated: np.ndarray, small_w: int, small_h: int) -> list:
         hazards = []
-        road_y_start = int(small_h * 0.50)
-        road_roi = frame[road_y_start:int(small_h * 0.98), int(small_w * 0.05):int(small_w * 0.95)]
+        # Require puddle detections in lower 35% of road ground plane only
+        road_y_start = int(small_h * 0.65)
+        road_roi = frame[road_y_start:int(small_h * 0.98), int(small_w * 0.08):int(small_w * 0.92)]
         if road_roi.size == 0:
             return hazards
 
         hsv = cv2.cvtColor(road_roi, cv2.COLOR_BGR2HSV)
-        # Blue/Cyan specular puddle reflection mask
-        lower_blue = np.array([85, 45, 60], dtype=np.uint8)
-        upper_blue = np.array([135, 255, 255], dtype=np.uint8)
+        # Blue/Cyan specular puddle reflection mask (dark ground puddle reflections)
+        lower_blue = np.array([90, 60, 40], dtype=np.uint8)
+        upper_blue = np.array([130, 255, 160], dtype=np.uint8)  # Limit upper V to 160 to ignore bright metallic white license plates
         mask = cv2.inRange(hsv, lower_blue, upper_blue)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area > 1800:
+            if area > 3500:  # Require large puddle surface
                 rx, ry, rw, rh = cv2.boundingRect(cnt)
-                abs_x = int(small_w * 0.05) + rx
-                abs_y = road_y_start + ry
+                aspect = rw / float(max(1, rh))
 
-                hazards.append({
-                    "type": "WATERLOGGING",
-                    "confidence": 0.94,
-                    "severity": "HIGH" if area > 6000 else "MEDIUM",
-                    "risk_label": "MONSOON PUDDLE WATERLOGGING",
-                    "bbox": [abs_x, abs_y, rw, rh]
-                })
+                if aspect >= 2.2:  # Wide horizontal ground puddle
+                    abs_x = int(small_w * 0.08) + rx
+                    abs_y = road_y_start + ry
 
-                cv2.rectangle(annotated, (abs_x, abs_y), (abs_x + rw, abs_y + rh), (248, 189, 56), 2, cv2.LINE_AA)
-                cv2.putText(annotated, "💧 WATERLOGGING DETECTED", (abs_x, max(15, abs_y - 6)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.40, (248, 189, 56), 2, cv2.LINE_AA)
-                break
+                    hazards.append({
+                        "type": "WATERLOGGING",
+                        "confidence": 0.94,
+                        "severity": "HIGH" if area > 8000 else "MEDIUM",
+                        "risk_label": "MONSOON PUDDLE WATERLOGGING",
+                        "bbox": [abs_x, abs_y, rw, rh]
+                    })
+
+                    cv2.rectangle(annotated, (abs_x, abs_y), (abs_x + rw, abs_y + rh), (248, 189, 56), 2, cv2.LINE_AA)
+                    cv2.putText(annotated, "💧 WATERLOGGING DETECTED", (abs_x, max(15, abs_y - 6)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.40, (248, 189, 56), 2, cv2.LINE_AA)
+                    break
         return hazards
 
     def _detect_damaged_signboards(self, frame: np.ndarray, annotated: np.ndarray, small_w: int, small_h: int) -> list:
