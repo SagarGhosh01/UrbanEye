@@ -1,0 +1,11 @@
+{
+  "name": "urbaneye-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bharat Electronics Limited AI-Powered Mobile Urban Intelligence Platform",
+  "scripts": {
+    "start": "powershell -ExecutionPolicy Bypass -File ./start.ps1",
+    "dashboard": "cd dashboard && npm run dev",
+    "backend": "cd backend && python -m uvicorn app.main:app --reload"
+  }
+}

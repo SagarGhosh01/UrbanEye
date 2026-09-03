@@ -1,17 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/common/Header';
-import { FleetOverviewCards } from './components/fleet/FleetOverviewCards';
+import { Sidebar } from './components/layout/Sidebar';
+import { AuthModal } from './components/auth/AuthModal';
+
+// 19 Module Views
+import { CommandCenterView } from './components/dashboard/CommandCenterView';
 import { LiveCameraFeed } from './components/vision/LiveCameraFeed';
-import { GISMap } from './components/map/GISMap';
-import { EventTimeline } from './components/events/EventTimeline';
-import { EventDetailModal } from './components/events/EventDetailModal';
-import { RoadConditionBoard } from './components/analytics/RoadConditionBoard';
-import { BandwidthSavingsGauge } from './components/analytics/BandwidthSavingsGauge';
-import { ANPRReviewConsole } from './components/anpr/ANPRReviewConsole';
-import { FleetDeviceHealth } from './components/fleet/FleetDeviceHealth';
-import { PilotDemoControls } from './components/demo/PilotDemoControls';
 import { PhoneCameraStreamer } from './components/phone/PhoneCameraStreamer';
-import { MunicipalTicketsBoard } from './components/tickets/MunicipalTicketsBoard';
+import { FleetManagementView } from './components/fleet/FleetManagementView';
+import { GISMapView } from './components/map/GISMapView';
+import { IncidentManagementView } from './components/incidents/IncidentManagementView';
+import { InfrastructureManagementView } from './components/infrastructure/InfrastructureManagementView';
+import { TrafficIntelligenceView } from './components/traffic/TrafficIntelligenceView';
+import { AIInsightsView } from './components/insights/AIInsightsView';
+import { AnalyticsView } from './components/analytics/AnalyticsView';
+import { RouteIntelligenceView } from './components/routes/RouteIntelligenceView';
+import { FleetCoverageView } from './components/coverage/FleetCoverageView';
+import { ANPRInvestigationView } from './components/anpr/ANPRInvestigationView';
+import { AlertsCenterView } from './components/alerts/AlertsCenterView';
+import { ReportsView } from './components/reports/ReportsView';
+import { UserManagementView } from './components/users/UserManagementView';
+import { AuditLogsView } from './components/audit/AuditLogsView';
+import { SystemSettingsView } from './components/settings/SystemSettingsView';
+import { UserProfileView } from './components/profile/UserProfileView';
+
+import { EventDetailModal } from './components/events/EventDetailModal';
+import { PilotDemoControls } from './components/demo/PilotDemoControls';
 import { api } from './services/api';
 import { realtimeService } from './services/websocket';
 import { 
@@ -23,15 +37,20 @@ import {
   KPISummary, 
   BandwidthReport, 
   HeatmapPoint, 
-  UserRole 
+  UserRole,
+  NavigationTab,
+  IncidentItem
 } from './types';
-import { Eye, ShieldAlert, Cpu, Activity, Smartphone, QrCode, Building2 } from 'lucide-react';
+import { Smartphone, QrCode } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const [currentRole, setCurrentRole] = useState<UserRole>('admin');
+  const [currentRole, setCurrentRole] = useState<UserRole>('transport_authority');
+  const [activeTab, setActiveTab] = useState<NavigationTab>('command_center');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [demoMode, setDemoMode] = useState<boolean>(true);
   const [isConnected, setIsConnected] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'main' | 'anpr' | 'devices' | 'analytics' | 'tickets'>('main');
+
   const [showPhoneStreamer, setShowPhoneStreamer] = useState<boolean>(false);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
 
@@ -42,23 +61,50 @@ export const App: React.FC = () => {
   const [events, setEvents] = useState<UrbanEvent[]>([]);
   const [roadSegments, setRoadSegments] = useState<RoadSegment[]>([]);
   const [heatmaps, setHeatmaps] = useState<HeatmapPoint[]>([]);
-  const [bandwidthReport, setBandwidthReport] = useState<BandwidthReport | null>(null);
-  const [anprRecords, setAnprRecords] = useState<ANPRRecord[]>([]);
 
-  const [selectedBusId, setSelectedBusId] = useState<string>('BUS-101');
+  const [selectedBusId, setSelectedBusId] = useState<string>('BUS-102');
   const [inspectingEvent, setInspectingEvent] = useState<UrbanEvent | null>(null);
+
+  // Sample Incidents
+  const [incidents] = useState<IncidentItem[]>([
+    {
+      incident_id: 'INC-8092',
+      type: 'POTHOLE_CRITICAL',
+      severity: 'CRITICAL',
+      status: 'DETECTED',
+      ai_confidence: 94.2,
+      bus_id: 'BUS-102',
+      camera_id: 'CAM-FRONT-01',
+      location: { lat: 22.5726, lng: 88.3639, road_name: 'MG Road Segment 4', resolved_address: '142 MG Road, Ward 42' },
+      timestamp: '2026-09-02 18:42:11',
+      assigned_officer: null,
+      description: 'Severe road pothole detected by 4 buses.'
+    },
+    {
+      incident_id: 'INC-8091',
+      type: 'WATERLOGGING_SEVERE',
+      severity: 'HIGH',
+      status: 'UNDER_REVIEW',
+      ai_confidence: 89.6,
+      bus_id: 'BUS-105',
+      camera_id: 'CAM-FRONT-02',
+      location: { lat: 22.5411, lng: 88.3912, road_name: 'Park Circus Connector' },
+      timestamp: '2026-09-02 18:25:40',
+      assigned_officer: 'Officer Raj Kumar',
+      description: 'Waterlogging accumulating across 2 lanes.'
+    }
+  ]);
 
   // Load initial data
   const loadData = async () => {
     try {
-      const [kpiRes, busRes, devRes, evRes, segRes, heatRes, bwRes] = await Promise.allSettled([
+      const [kpiRes, busRes, devRes, evRes, segRes, heatRes] = await Promise.allSettled([
         api.getKPIs(),
         api.getBuses(),
         api.getDevices(),
         api.getEvents({ limit: 50 }),
         api.getRoadSegments(),
-        api.getHeatmaps(),
-        api.getBandwidthReport()
+        api.getHeatmaps()
       ]);
 
       if (kpiRes.status === 'fulfilled') setKpis(kpiRes.value);
@@ -67,16 +113,6 @@ export const App: React.FC = () => {
       if (evRes.status === 'fulfilled') setEvents(evRes.value);
       if (segRes.status === 'fulfilled') setRoadSegments(segRes.value);
       if (heatRes.status === 'fulfilled') setHeatmaps(heatRes.value);
-      if (bwRes.status === 'fulfilled') setBandwidthReport(bwRes.value);
-
-      if (currentRole === 'law_enforcement_liaison' || currentRole === 'admin') {
-        try {
-          const anprRes = await api.getANPRRecords();
-          setAnprRecords(anprRes);
-        } catch (e) {
-          // Gated
-        }
-      }
     } catch (err) {
       console.error('Error fetching initial data:', err);
     }
@@ -126,237 +162,187 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleFlagANPR = async (anprId: string, reason: string) => {
-    try {
-      await api.flagANPRRecord(anprId, reason);
-      setAnprRecords((prev) => prev.map((r) => r.id === anprId ? { ...r, is_flagged: true, flag_reason: reason } : r));
-    } catch (e) {
-      console.error('Failed to flag ANPR record:', e);
-    }
-  };
-
-  // If in Phone Camera mode, render the full-screen Phone Streamer
+  // If in Phone Camera streamer mode, render full-screen streamer
   if (showPhoneStreamer) {
     return <PhoneCameraStreamer onBackToDashboard={() => setShowPhoneStreamer(false)} />;
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white">
-      {/* Top Header */}
-      <Header
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans selection:bg-sky-500 selection:text-white">
+      {/* 1. Collapsible Sidebar Navigation */}
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        collapsed={sidebarCollapsed}
+        setCollapsed={setSidebarCollapsed}
         currentRole={currentRole}
-        onRoleChange={setCurrentRole}
-        activeBusesCount={buses.length || 5}
-        isConnected={isConnected}
-        demoMode={demoMode}
-        setDemoMode={setDemoMode}
+        onOpenAuth={() => setShowAuthModal(true)}
+        unreadAlertsCount={2}
       />
 
-      <main className="flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
-        {/* Pilot Demo Mode Panel */}
-        {demoMode && <PilotDemoControls onRefresh={loadData} />}
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Header */}
+        <Header
+          currentRole={currentRole}
+          onRoleChange={setCurrentRole}
+          activeBusesCount={buses.length || 24}
+          isConnected={isConnected}
+          demoMode={demoMode}
+          setDemoMode={setDemoMode}
+        />
 
-        {/* Top Fleet KPI Cards */}
-        <FleetOverviewCards kpis={kpis} />
+        <main className="flex-1 p-4 md:p-6 space-y-4 max-w-7xl mx-auto w-full">
+          {/* Pilot Demo Controls Banner */}
+          {demoMode && <PilotDemoControls onRefresh={loadData} />}
 
-        {/* View Navigation Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setActiveTab('main')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
-                activeTab === 'main'
-                  ? 'bg-sky-500 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>GIS Map & Live Vision</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('anpr')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
-                activeTab === 'anpr'
-                  ? 'bg-sky-500 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`}
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>ANPR & Incident Console</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('devices')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
-                activeTab === 'devices'
-                  ? 'bg-sky-500 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`}
-            >
-              <Cpu className="w-3.5 h-3.5" />
-              <span>Edge Hardware Diagnostics</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
-                activeTab === 'analytics'
-                  ? 'bg-sky-500 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5" />
-              <span>Municipal Road Quality</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('tickets')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
-                activeTab === 'tickets'
-                  ? 'bg-emerald-500 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>PWD Work-Orders</span>
-            </button>
-          </div>
-
-          {/* Phone as Bus Camera Launcher */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setShowPhoneStreamer(true)}
-              className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-md shadow-emerald-500/20 transition-all active:scale-95"
-            >
-              <Smartphone className="w-4 h-4" />
-              <span>Launch Phone Bus Camera</span>
-            </button>
-
-            <button
-              onClick={() => setShowQrModal(true)}
-              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-colors"
-              title="Connect Mobile via Wi-Fi"
-            >
-              <QrCode className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Content Panes */}
-        {activeTab === 'main' && (
-          <div className="space-y-4">
-            {/* Primary Grid: GIS Map + Live Camera */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-              <div className="lg:col-span-7 h-[460px]">
-                <GISMap
-                  buses={buses}
-                  events={events}
-                  roadSegments={roadSegments}
-                  heatmaps={heatmaps}
-                  selectedBusId={selectedBusId}
-                  onBusSelect={setSelectedBusId}
-                  onEventClick={setInspectingEvent}
-                />
-              </div>
-
-              <div className="lg:col-span-5 h-[460px]">
-                <LiveCameraFeed
-                  selectedBusId={selectedBusId}
-                  onBusSelect={setSelectedBusId}
-                  buses={buses}
-                  onOpenPhoneMode={() => setShowPhoneStreamer(true)}
-                />
-              </div>
+          {/* Quick Phone Streamer Launcher Bar */}
+          <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl text-xs">
+            <div className="flex items-center space-x-2 text-slate-300">
+              <span className="font-bold text-emerald-400">Mobile Optical Sensor Mode:</span>
+              <span className="text-slate-400">Transform any smartphone rear camera into a live bus YOLO sensor node</span>
             </div>
-
-            {/* Secondary Grid: Event Timeline & Road Index & Bandwidth Matrix */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4">
-              <div className="lg:col-span-5 h-[380px]">
-                <EventTimeline
-                  events={events}
-                  onSelectEvent={setInspectingEvent}
-                />
-              </div>
-
-              <div className="lg:col-span-4 h-[380px]">
-                <RoadConditionBoard
-                  segments={roadSegments}
-                />
-              </div>
-
-              <div className="lg:col-span-3 h-[380px]">
-                <BandwidthSavingsGauge
-                  report={bandwidthReport}
-                />
-              </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setShowPhoneStreamer(true)}
+                className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg font-bold flex items-center space-x-1.5 shadow-md transition-all"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Launch Smartphone Bus Camera</span>
+              </button>
+              <button
+                onClick={() => setShowQrModal(true)}
+                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-colors"
+                title="Mobile Wi-Fi Connection QR"
+              >
+                <QrCode className="w-4 h-4" />
+              </button>
             </div>
           </div>
-        )}
 
-        {activeTab === 'anpr' && (
-          <div className="h-[600px]">
-            <ANPRReviewConsole
-              records={anprRecords}
-              currentRole={currentRole}
-              onFlagRecord={handleFlagANPR}
+          {/* 19 Module Views Render Switcher */}
+          {activeTab === 'command_center' && (
+            <CommandCenterView
+              kpis={kpis}
+              buses={buses}
+              events={events}
+              incidents={incidents}
+              onNavigate={setActiveTab}
+              onSelectEvent={setInspectingEvent}
+              onStartDemo={() => setDemoMode(true)}
             />
-          </div>
-        )}
+          )}
 
-        {activeTab === 'devices' && (
-          <div className="h-[600px]">
-            <FleetDeviceHealth
-              devices={devices}
+          {activeTab === 'live_bus' && (
+            <div className="h-[620px]">
+              <LiveCameraFeed
+                selectedBusId={selectedBusId}
+                onBusSelect={setSelectedBusId}
+                buses={buses}
+                onOpenPhoneMode={() => setShowPhoneStreamer(true)}
+              />
+            </div>
+          )}
+
+          {activeTab === 'fleet' && (
+            <FleetManagementView buses={buses} onNavigate={setActiveTab} />
+          )}
+
+          {activeTab === 'gis_map' && (
+            <GISMapView
+              buses={buses}
+              events={events}
+              roadSegments={roadSegments}
+              heatmaps={heatmaps}
+              selectedBusId={selectedBusId}
+              onBusSelect={setSelectedBusId}
+              onEventClick={setInspectingEvent}
             />
-          </div>
-        )}
+          )}
 
-        {activeTab === 'analytics' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-8">
-              <RoadConditionBoard segments={roadSegments} />
-            </div>
-            <div className="lg:col-span-4">
-              <BandwidthSavingsGauge report={bandwidthReport} />
-            </div>
-          </div>
-        )}
+          {activeTab === 'incidents' && (
+            <IncidentManagementView currentRole={currentRole} />
+          )}
 
-        {activeTab === 'tickets' && (
-          <MunicipalTicketsBoard />
-        )}
-      </main>
+          {activeTab === 'infrastructure' && (
+            <InfrastructureManagementView currentRole={currentRole} />
+          )}
 
-      {/* QR Code / Wi-Fi Connect Modal */}
+          {activeTab === 'traffic' && (
+            <TrafficIntelligenceView />
+          )}
+
+          {activeTab === 'ai_insights' && (
+            <AIInsightsView onNavigate={setActiveTab} />
+          )}
+
+          {activeTab === 'analytics' && (
+            <AnalyticsView />
+          )}
+
+          {activeTab === 'routes' && (
+            <RouteIntelligenceView onNavigate={setActiveTab} />
+          )}
+
+          {activeTab === 'coverage' && (
+            <FleetCoverageView />
+          )}
+
+          {activeTab === 'anpr' && (
+            <ANPRInvestigationView currentRole={currentRole} />
+          )}
+
+          {activeTab === 'alerts' && (
+            <AlertsCenterView onNavigate={setActiveTab} />
+          )}
+
+          {activeTab === 'reports' && (
+            <ReportsView />
+          )}
+
+          {activeTab === 'users' && (
+            <UserManagementView currentRole={currentRole} />
+          )}
+
+          {activeTab === 'audit_logs' && (
+            <AuditLogsView />
+          )}
+
+          {activeTab === 'settings' && (
+            <SystemSettingsView />
+          )}
+
+          {activeTab === 'profile' && (
+            <UserProfileView currentRole={currentRole} onOpenAuth={() => setShowAuthModal(true)} />
+          )}
+        </main>
+      </div>
+
+      {/* Auth & Role Gateway Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        currentRole={currentRole}
+        onSelectRole={setCurrentRole}
+      />
+
+      {/* QR Connect Modal */}
       {showQrModal && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-center shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-center shadow-2xl space-y-4">
             <div className="p-3 bg-sky-500/10 rounded-full border border-sky-500/30 w-14 h-14 mx-auto flex items-center justify-center">
               <Smartphone className="w-7 h-7 text-sky-400" />
             </div>
-            <h3 className="font-bold text-slate-100 text-lg">Use Your Phone as a Bus Camera</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Open your phone's browser on the same Wi-Fi network and navigate to the address below. Your phone's rear camera and GPS will feed live directly into the YOLOv8 ML engine!
+            <h3 className="font-bold text-slate-100 text-lg">Use Smartphone as Mobile Bus Camera</h3>
+            <p className="text-xs text-slate-400">
+              Open your mobile browser on local Wi-Fi and navigate to:
             </p>
-
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-sm text-emerald-400 select-all space-y-1">
-              <div className="text-xs text-slate-400">Wi-Fi HTTPS Mobile Address (Unlocks Camera):</div>
-              <div className="font-bold text-base text-emerald-400">
-                https://10.16.41.204:5173
-              </div>
-              <div className="text-[10px] text-slate-500 pt-1">
-                (When opening on phone, tap <em>Advanced → Proceed to 10.16.41.204</em> to allow camera access)
-              </div>
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono text-sm text-emerald-400 font-bold select-all">
+              https://10.16.41.204:5173
             </div>
-
-            <p className="text-[11px] text-slate-500">
-              Or simply click <strong>"Launch Phone Bus Camera"</strong> on this device if your webcam/camera is connected!
-            </p>
-
             <button
               onClick={() => setShowQrModal(false)}
-              className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-colors"
+              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl"
             >
               Close
             </button>

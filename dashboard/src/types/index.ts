@@ -1,10 +1,38 @@
-export type UserRole = 'viewer' | 'analyst' | 'admin' | 'law_enforcement_liaison';
+export type UserRole = 
+  | 'super_admin' 
+  | 'transport_authority' 
+  | 'field_officer' 
+  | 'bus_operator'
+  | 'admin' 
+  | 'analyst' 
+  | 'law_enforcement_liaison' 
+  | 'viewer';
+
+export type NavigationTab = 
+  | 'command_center'
+  | 'live_bus'
+  | 'fleet'
+  | 'gis_map'
+  | 'incidents'
+  | 'infrastructure'
+  | 'traffic'
+  | 'ai_insights'
+  | 'analytics'
+  | 'routes'
+  | 'coverage'
+  | 'anpr'
+  | 'alerts'
+  | 'reports'
+  | 'users'
+  | 'audit_logs'
+  | 'settings'
+  | 'profile';
 
 export interface LocationData {
   lat: number | null;
   lng: number | null;
   accuracy_m?: number | null;
-  status: 'LOCKED' | 'DEGRADED' | 'UNAVAILABLE';
+  status?: string;
   resolved_address?: string | null;
   road_name?: string | null;
   locality?: string | null;
@@ -38,7 +66,7 @@ export interface EventMetadata {
 
 export interface UrbanEvent {
   event_id: string;
-  type: 'POTHOLE' | 'WATERLOGGING' | 'DAMAGED_SIGN' | 'NEAR_MISS' | 'ILLEGAL_PARKING' | 'CONGESTION' | 'ANPR_ALERT' | 'ROAD_SURFACE_EROSION';
+  type: 'POTHOLE' | 'WATERLOGGING' | 'DAMAGED_SIGN' | 'NEAR_MISS' | 'ILLEGAL_PARKING' | 'CONGESTION' | 'ANPR_ALERT' | 'ROAD_SURFACE_EROSION' | 'MISSING_ZEBRA' | 'MISSING_DIVIDER';
   confidence: number;
   timestamp: string;
   location: LocationData;
@@ -95,6 +123,10 @@ export interface BusTelemetry {
   speed_kmh: number;
   heading_deg: number;
   last_seen: string;
+  camera_status?: 'ACTIVE' | 'OFFLINE' | 'DEGRADED';
+  gps_status?: 'ACTIVE' | 'OFFLINE' | 'SEARCHING';
+  ai_status?: 'ACTIVE' | 'STANDBY' | 'ERROR';
+  events_today_count?: number;
 }
 
 export interface EdgeDevice {
@@ -143,6 +175,9 @@ export interface ANPRRecord {
   location?: LocationData;
   timestamp: string;
   flag_status?: 'HOTLIST_MATCH' | 'EXPIRED_PUC' | 'CLEAN';
+  first_seen?: string;
+  last_seen?: string;
+  detected_by_buses?: string[];
 }
 
 export interface KPISummary {
@@ -158,6 +193,9 @@ export interface KPISummary {
   anpr_plates_scanned: number;
   bandwidth_reduction_pct: number;
   bandwidth_savings_pct: number;
+  open_issues_count?: number;
+  critical_incidents_count?: number;
+  traffic_density_level?: 'LOW' | 'MEDIUM' | 'HIGH' | 'SEVERE';
 }
 
 export interface BandwidthReport {
@@ -178,4 +216,97 @@ export interface HeatmapPoint {
   intensity: number;
   weight: number;
   type: string;
+}
+
+export type IncidentStatus = 'DETECTED' | 'UNDER_REVIEW' | 'VERIFIED' | 'ASSIGNED' | 'IN_PROGRESS' | 'RESOLVED';
+
+export interface IncidentItem {
+  incident_id: string;
+  type: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  status: IncidentStatus;
+  ai_confidence: number;
+  bus_id: string;
+  camera_id: string;
+  location: LocationData;
+  timestamp: string;
+  assigned_officer?: string | null;
+  video_url?: string;
+  image_url?: string;
+  description: string;
+}
+
+export interface InfrastructureIssue {
+  issue_id: string;
+  title: string;
+  type: 'POTHOLE' | 'ROAD_DAMAGE' | 'MISSING_DIVIDER' | 'MISSING_ZEBRA' | 'DAMAGED_SIGN' | 'WATERLOGGING' | 'OTHER';
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  detection_frequency: number;
+  buses_detected_count: number;
+  location: LocationData;
+  last_detected: string;
+  status: 'OPEN' | 'VERIFIED' | 'ASSIGNED' | 'RESOLVED';
+  assigned_officer?: string;
+}
+
+export interface AIInsight {
+  insight_id: string;
+  title: string;
+  summary: string;
+  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  category: 'REPEATED_HAZARDS' | 'EMERGING_CONGESTION' | 'DANGEROUS_LOCATIONS' | 'WATERLOGGING' | 'DETERIORATION' | 'PEDESTRIAN_RISK' | 'ROUTE_DELAY';
+  road_segment?: string;
+  detections_count?: number;
+  buses_count?: number;
+  timeframe?: string;
+  action_recommended: string;
+  timestamp: string;
+}
+
+export interface RouteIntelligence {
+  route_id: string;
+  route_name: string;
+  distance_km: number;
+  avg_delay_min: number;
+  hazards_count: number;
+  traffic_events_count: number;
+  incidents_count: number;
+  status: 'GOOD' | 'NEEDS_ATTENTION' | 'CRITICAL_DELAY';
+  active_buses: number;
+}
+
+export interface UserAccount {
+  user_id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  department: string;
+  assigned_zone?: string;
+  status: 'ACTIVE' | 'INACTIVE' | 'PENDING';
+  last_active: string;
+  phone?: string;
+}
+
+export interface AuditLogEntry {
+  log_id: string;
+  user_name: string;
+  user_role: string;
+  action: string;
+  timestamp: string;
+  event_id?: string;
+  old_status?: string;
+  new_status?: string;
+  details?: string;
+}
+
+export interface AlertNotification {
+  alert_id: string;
+  type: 'CRITICAL_INCIDENT' | 'MAJOR_HAZARD' | 'TRAFFIC_CONGESTION' | 'WATERLOGGING' | 'INFRASTRUCTURE';
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  title: string;
+  message: string;
+  timestamp: string;
+  event_id?: string;
+  bus_id?: string;
+  is_read: boolean;
 }
