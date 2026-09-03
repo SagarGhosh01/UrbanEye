@@ -23,11 +23,15 @@ def get_yolo():
     if yolo_model is None:
         try:
             from ultralytics import YOLO
-            logger.info("Initializing YOLOv8 tracking engine with PyTorch backend...")
-            yolo_model = YOLO("yolov8n.pt")
-            logger.info("YOLOv8 successfully initialized!")
+            logger.info("Initializing SOTA YOLO11/YOLOv8 tracking engine with PyTorch backend...")
+            try:
+                yolo_model = YOLO("yolo11n.pt")
+                logger.info("SOTA YOLO11 model successfully initialized!")
+            except Exception:
+                yolo_model = YOLO("yolov8n.pt")
+                logger.info("YOLOv8 model successfully initialized!")
         except Exception as e:
-            logger.warning(f"Could not load YOLOv8 ({e}). Fallback to OpenCV CV detector.")
+            logger.warning(f"Could not load YOLO model ({e}). Fallback to OpenCV CV detector.")
             yolo_model = False
     return yolo_model
 
