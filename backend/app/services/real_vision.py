@@ -277,53 +277,29 @@ class RealVisionPipeline:
 
     def _detect_fallback_objects(self, frame: np.ndarray, small_w: int, small_h: int) -> list:
         """
-        Computer Vision Saliency & Face/Person/Vehicle Silhouette Fallback Detector:
-        Ensures webcam stream detects humans, faces, objects, and vehicles even in low-contrast indoor lighting.
+        OpenCV HOG Pedestrian & Person Silhouette Fallback Detector:
+        Detects real humans in webcam feed without false-flagging background desk objects.
         """
         dets = []
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        
-        # 1. Human skin-tone / torso saliency mask
-        lower_skin = np.array([0, 20, 70], dtype=np.uint8)
-        upper_skin = np.array([20, 255, 255], dtype=np.uint8)
-        mask_skin = cv2.inRange(hsv, lower_skin, upper_skin)
-        
-        # 2. Prominent cyan/blue/red object mask
-        mask_color = cv2.inRange(hsv, np.array([80, 40, 40]), np.array([140, 255, 255]))
-        combined_mask = cv2.bitwise_or(mask_skin, mask_color)
-        
-        contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if 1200 < area < 90000:
-                x, y, w, h = cv2.boundingRect(cnt)
-                aspect = h / float(max(1, w))
-                
-                # Vertical shape = Pedestrian / Person in webcam
-                if aspect >= 1.1:
+        try:
+            hog = cv2.HOGDescriptor()
+            hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+            rects, weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(4, 4), scale=1.05)
+            
+            for i, (x, y, w, h) in enumerate(rects):
+                if weights[i] > 0.30:
                     dets.append({
-                        "track_id": 1,
+                        "track_id": i + 1,
                         "label": "pedestrian",
-                        "confidence": 0.89,
-                        "bbox": [x, y, w, h],
+                        "confidence": round(min(0.95, float(weights[i])), 2),
+                        "bbox": [int(x), int(y), int(w), int(h)],
                         "norm_bbox": [round(x/float(small_w), 4), round(y/float(small_h), 4), round(w/float(small_w), 4), round(h/float(small_h), 4)],
                         "distance_m": round(max(1.2, 4.5 - (h / float(small_h)) * 3.5), 1),
                         "speed_est_kmh": 0.0
                     })
-                    break
-                # Boxy shape = Vehicle / Object
-                elif 0.5 <= aspect < 1.1:
-                    dets.append({
-                        "track_id": 1,
-                        "label": "car",
-                        "confidence": 0.88,
-                        "bbox": [x, y, w, h],
-                        "norm_bbox": [round(x/float(small_w), 4), round(y/float(small_h), 4), round(w/float(small_w), 4), round(h/float(small_h), 4)],
-                        "distance_m": 5.4,
-                        "speed_est_kmh": 22.0
-                    })
-                    break
+        except Exception:
+            pass
+
         return dets
 
     def _estimate_distance(self, bbox_h: int, frame_h: int, label: str) -> float:
@@ -366,27 +342,20 @@ class RealVisionPipeline:
         found_plates = []
         seen_texts = set()
 
+        # Run ANPR strictly on detected vehicle bounding box crops
         for crop, (vx, vy, vw, vh) in vehicle_crops:
             ch, cw, _ = crop.shape
-            lower_crop = crop[int(ch * 0.40):ch, :]
+            lower_crop = crop[int(ch * 0.35):ch, :]
             plate_info = self._ocr_plate_from_image(lower_crop)
             if plate_info and plate_info["plate"] not in seen_texts:
                 seen_texts.add(plate_info["plate"])
                 found_plates.append(plate_info)
                 self._draw_plate_badge(annotated, plate_info, vx, vy + vh, small_w, small_h)
 
-        if len(found_plates) == 0:
-            center_crop = frame[int(small_h * 0.15):int(small_h * 0.85), int(small_w * 0.15):int(small_w * 0.85)]
-            plate_info = self._ocr_plate_from_image(center_crop)
-            if plate_info and plate_info["plate"] not in seen_texts:
-                seen_texts.add(plate_info["plate"])
-                found_plates.append(plate_info)
-                self._draw_plate_badge(annotated, plate_info, int(small_w * 0.3), int(small_h * 0.8), small_w, small_h)
-
         return found_plates
 
     def _ocr_plate_from_image(self, img_region: np.ndarray) -> dict:
-        if img_region.size == 0 or img_region.shape[1] < 30:
+        if img_region.size == 0 or img_region.shape[1] < 35 or img_region.shape[0] < 15:
             return None
 
         gray = cv2.cvtColor(img_region, cv2.COLOR_BGR2GRAY)
@@ -410,7 +379,7 @@ class RealVisionPipeline:
                             "is_readable": True,
                             "standard": "Indian HSRP"
                         }
-                    elif len(clean_text) >= 4 and prob >= 0.35:
+                    elif len(clean_text) >= 5 and prob >= 0.50:
                         return {
                             "plate": clean_text,
                             "raw_text": clean_text,
@@ -420,33 +389,6 @@ class RealVisionPipeline:
                         }
             except Exception:
                 pass
-
-        # Morphological Plate Reader Fallback
-        try:
-            rect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 5))
-            tophat = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, rect_kernel)
-            grad_x = cv2.Sobel(tophat, cv2.CV_32F, 1, 0, -1)
-            grad_x = np.absolute(grad_x)
-            min_val, max_val = np.min(grad_x), np.max(grad_x)
-            if max_val > min_val:
-                grad_norm = ((grad_x - min_val) / (max_val - min_val) * 255).astype("uint8")
-                grad_blur = cv2.GaussianBlur(grad_norm, (5, 5), 0)
-                _, thresh = cv2.threshold(grad_blur, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-                contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                
-                for c in contours:
-                    x, y, w, h = cv2.boundingRect(c)
-                    aspect = w / float(max(1, h))
-                    if 2.0 <= aspect <= 6.0 and w > 40 and h > 10:
-                        return {
-                            "plate": "DL-01-AB-1234",
-                            "raw_text": "DL01AB1234",
-                            "confidence": 0.91,
-                            "is_readable": True,
-                            "standard": "Indian HSRP (CV-Verified)"
-                        }
-        except Exception:
-            pass
 
         return None
 
@@ -472,8 +414,8 @@ class RealVisionPipeline:
 
         gray = cv2.cvtColor(road_roi, cv2.COLOR_BGR2GRAY)
         
-        # Detect dark asphalt depressions
-        _, thresh = cv2.threshold(gray, 45, 255, cv2.THRESH_BINARY_INV)
+        # Detect dark asphalt depressions with strict contrast ratio
+        _, thresh = cv2.threshold(gray, 35, 255, cv2.THRESH_BINARY_INV)
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         has_imu_bump = False
@@ -483,11 +425,18 @@ class RealVisionPipeline:
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if 250 < area < 40000:
+            if 1500 < area < 40000:
                 rx, ry, rw, rh = cv2.boundingRect(cnt)
                 aspect = rw / float(max(1, rh))
 
-                if 0.5 <= aspect <= 4.5:
+                # Verify dark contrast ratio relative to surrounding road ROI
+                roi_patch = gray[ry:ry+rh, rx:rx+rw]
+                if roi_patch.size > 0:
+                    mean_val = np.mean(roi_patch)
+                    if mean_val > 30 and not has_imu_bump:
+                        continue  # Not dark enough for a real pothole depression
+
+                if 0.6 <= aspect <= 3.8:
                     abs_x = int(small_w * 0.05) + rx
                     abs_y = road_y_start + ry
 
