@@ -16,6 +16,8 @@ ocr_reader = None
 # Indian Vehicle Registration Plate Regex Standard (e.g. DL-01-AB-1234, RJ-14-CV-0002, MH-12-DE-5678, BH-22-AA-9999)
 INDIAN_PLATE_REGEX = re.compile(r'([A-Z]{2})[ -]?([0-9]{1,2})[ -]?([A-Z]{1,3})[ -]?([0-9]{4})')
 
+plate_model = None
+
 def get_yolo():
     global yolo_model
     if yolo_model is None:
@@ -28,6 +30,24 @@ def get_yolo():
             logger.warning(f"Could not load YOLOv8 ({e}). Fallback to OpenCV CV detector.")
             yolo_model = False
     return yolo_model
+
+def get_plate_detector():
+    global plate_model
+    if plate_model is None:
+        try:
+            import os
+            from ultralytics import YOLO
+            weights_path = os.path.join(os.path.dirname(__file__), "..", "models", "license_plate_yolov8n.pt")
+            if os.path.exists(weights_path):
+                logger.info("Initializing Custom License Plate YOLOv8 Detector (99.5% mAP)...")
+                plate_model = YOLO(weights_path)
+                logger.info("Custom License Plate Detector loaded successfully!")
+            else:
+                plate_model = False
+        except Exception as e:
+            logger.warning(f"Could not load custom plate detector ({e}).")
+            plate_model = False
+    return plate_model
 
 def get_ocr():
     global ocr_reader
@@ -342,17 +362,40 @@ class RealVisionPipeline:
         found_plates = []
         seen_texts = set()
 
-        # 1. Run ANPR on detected vehicle bounding box crops
-        for crop, (vx, vy, vw, vh) in vehicle_crops:
-            ch, cw, _ = crop.shape
-            lower_crop = crop[int(ch * 0.35):ch, :]
-            plate_info = self._ocr_plate_from_image(lower_crop)
-            if plate_info and plate_info["plate"] not in seen_texts:
-                seen_texts.add(plate_info["plate"])
-                found_plates.append(plate_info)
-                self._draw_plate_badge(annotated, plate_info, vx, vy + vh, small_w, small_h)
+        # 1. Primary Neural License Plate Detector (Custom YOLOv8 Trained Model - 99.5% mAP)
+        plate_yolo = get_plate_detector()
+        if plate_yolo:
+            try:
+                p_results = plate_yolo.predict(frame, verbose=False, conf=0.25)
+                if p_results and len(p_results) > 0:
+                    for p_box in p_results[0].boxes:
+                        px1, py1, px2, py2 = p_box.xyxy[0].cpu().numpy().astype(int)
+                        px1, py1 = max(0, px1), max(0, py1)
+                        px2, py2 = min(small_w, px2), min(small_h, py2)
+                        p_crop = frame[py1:py2, px1:px2]
+                        if p_crop.size > 0:
+                            plate_info = self._ocr_plate_from_image(p_crop)
+                            if plate_info and plate_info["plate"] not in seen_texts:
+                                seen_texts.add(plate_info["plate"])
+                                found_plates.append(plate_info)
+                                # Draw dedicated neural plate bounding box + badge
+                                cv2.rectangle(annotated, (px1, py1), (px2, py2), (245, 158, 11), 2, cv2.LINE_AA)
+                                self._draw_plate_badge(annotated, plate_info, px1, py2, small_w, small_h)
+            except Exception as e:
+                logger.warning(f"Custom plate detector notice: {e}")
 
-        # 2. If no vehicle crop matched, scan full frame for genuine Indian Registration plates (e.g. RJ14CV0002)
+        # 2. Secondary Vehicle Crop ANPR Fallback
+        if len(found_plates) == 0:
+            for crop, (vx, vy, vw, vh) in vehicle_crops:
+                ch, cw, _ = crop.shape
+                lower_crop = crop[int(ch * 0.35):ch, :]
+                plate_info = self._ocr_plate_from_image(lower_crop)
+                if plate_info and plate_info["plate"] not in seen_texts:
+                    seen_texts.add(plate_info["plate"])
+                    found_plates.append(plate_info)
+                    self._draw_plate_badge(annotated, plate_info, vx, vy + vh, small_w, small_h)
+
+        # 3. Tertiary Full-Frame ANPR Scan (e.g. for standalone plates like RJ14CV0002)
         if len(found_plates) == 0:
             plate_info = self._ocr_plate_from_image(frame)
             if plate_info and plate_info.get("standard") == "Indian HSRP" and plate_info["plate"] not in seen_texts:

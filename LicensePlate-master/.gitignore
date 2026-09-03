@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Project artifacts
+data/*.db
+data/*.db-journal
+models/*.pt
+!models/.gitkeep
+*.mp4
+*.avi
+*.jpg
+*.png
+!docs/**/*.png
+
+echo "dataset.zip" >> .gitignore
+echo "data/roboflow_dataset/" >> .gitignore
+echo "models/license_plate_detector*/" >> .gitignore
+echo "training.log" >> .gitignore
