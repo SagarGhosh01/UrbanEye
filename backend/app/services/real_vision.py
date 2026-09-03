@@ -49,6 +49,21 @@ def get_plate_detector():
             plate_model = False
     return plate_model
 
+paddle_ocr_reader = None
+
+def get_paddle_ocr():
+    global paddle_ocr_reader
+    if paddle_ocr_reader is None:
+        try:
+            from paddleocr import PaddleOCR
+            logger.info("Initializing PaddleOCR PP-OCRv4 neural text recognition engine...")
+            paddle_ocr_reader = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+            logger.info("PaddleOCR PP-OCRv4 initialized successfully!")
+        except Exception as e:
+            logger.warning(f"Could not load PaddleOCR ({e}). Fallback to EasyOCR.")
+            paddle_ocr_reader = False
+    return paddle_ocr_reader
+
 def get_ocr():
     global ocr_reader
     if ocr_reader is None:
@@ -112,11 +127,11 @@ class RealVisionPipeline:
         hazards = []
         vehicle_crops = []
 
-        # 1. Primary Deep Learning: YOLOv8 Tracking (conf=0.10 for high recall)
+        # 1. Primary Deep Learning: YOLOv8 / YOLO11 + ByteTrack Vehicle Tracking
         yolo = get_yolo()
         if yolo:
             try:
-                results = yolo.track(infer_frame, persist=True, verbose=False, conf=0.10, iou=0.45)
+                results = yolo.track(infer_frame, persist=True, verbose=False, conf=0.10, iou=0.45, tracker="bytetrack.yaml")
                 if results and len(results) > 0:
                     boxes = results[0].boxes
                     for box in boxes:
@@ -414,6 +429,37 @@ class RealVisionPipeline:
         contrast = clahe.apply(gray)
         filtered = cv2.bilateralFilter(contrast, 9, 75, 75)
 
+        # 1. Primary PaddleOCR PP-OCRv4 Neural Text Engine
+        p_ocr = get_paddle_ocr()
+        if p_ocr:
+            try:
+                p_res = p_ocr.ocr(filtered, cls=True)
+                if p_res and len(p_res) > 0 and p_res[0]:
+                    for line in p_res[0]:
+                        raw_text, prob = line[1][0], line[1][1]
+                        clean_text = re.sub(r'[^A-Z0-9]', '', raw_text.upper())
+                        match = INDIAN_PLATE_REGEX.search(clean_text)
+                        if match:
+                            formatted = f"{match.group(1)}-{match.group(2)}-{match.group(3)}-{match.group(4)}".replace('--', '-')
+                            return {
+                                "plate": formatted,
+                                "raw_text": clean_text,
+                                "confidence": round(float(prob), 2),
+                                "is_readable": True,
+                                "standard": "Indian HSRP (PaddleOCR PP-OCRv4)"
+                            }
+                        elif len(clean_text) >= 5 and prob >= 0.45:
+                            return {
+                                "plate": clean_text,
+                                "raw_text": clean_text,
+                                "confidence": round(float(prob), 2),
+                                "is_readable": True,
+                                "standard": "Commercial Plate (PaddleOCR)"
+                            }
+            except Exception:
+                pass
+
+        # 2. Secondary EasyOCR Neural Engine Fallback
         ocr = get_ocr()
         if ocr:
             try:
@@ -428,7 +474,7 @@ class RealVisionPipeline:
                             "raw_text": clean_text,
                             "confidence": round(float(prob), 2),
                             "is_readable": True,
-                            "standard": "Indian HSRP"
+                            "standard": "Indian HSRP (EasyOCR)"
                         }
                     elif len(clean_text) >= 6 and prob >= 0.55:
                         return {
@@ -436,7 +482,7 @@ class RealVisionPipeline:
                             "raw_text": clean_text,
                             "confidence": round(float(prob), 2),
                             "is_readable": True,
-                            "standard": "Commercial Plate"
+                            "standard": "Commercial Plate (EasyOCR)"
                         }
             except Exception:
                 pass
