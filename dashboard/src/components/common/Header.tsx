@@ -80,17 +80,10 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right: Controls & Role Switcher */}
         <div className="flex items-center space-x-2.5 w-full md:w-auto justify-end">
-          <button
-            onClick={() => setDemoMode(!demoMode)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all active:scale-95 ${
-              demoMode
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/20'
-                : 'bg-slate-800/90 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${demoMode ? 'text-amber-400 animate-spin-slow' : ''}`} />
-            <span>Pilot Mode: {demoMode ? 'ON' : 'OFF'}</span>
-          </button>
+          <div className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold font-mono flex items-center space-x-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            <span>PURE HARDWARE OPERATIONAL</span>
+          </div>
 
           {/* Role selector dropdown */}
           <div className="flex items-center bg-slate-950/90 rounded-xl px-2.5 py-1 border border-slate-800 shadow-sm">

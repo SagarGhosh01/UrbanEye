@@ -193,8 +193,6 @@ export const App: React.FC = () => {
         />
 
         <main className="flex-1 p-4 md:p-6 space-y-4 max-w-7xl mx-auto w-full">
-          {/* Pilot Demo Controls Banner */}
-          {demoMode && <PilotDemoControls onRefresh={loadData} />}
 
           {/* Quick Phone Streamer Launcher Bar */}
           <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl text-xs">
