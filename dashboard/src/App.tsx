@@ -48,7 +48,7 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavigationTab>('command_center');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
-  const [demoMode, setDemoMode] = useState<boolean>(true);
+  const [demoMode, setDemoMode] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(true);
 
   const [showPhoneStreamer, setShowPhoneStreamer] = useState<boolean>(false);
