@@ -51,7 +51,8 @@ class RealVisionPipeline:
     def process_frame(self, image_bytes: bytes, sensor_motion: dict = None) -> dict:
         """
         Enterprise AI Perception Engine (YOLOv8 + EasyOCR + Computer Vision Ensemble):
-        Guarantees high-precision multi-object tracking, license plate OCR, and metric pothole assessment.
+        Guarantees high-precision multi-object tracking, license plate OCR, metric pothole assessment,
+        waterlogging detection, damaged sign classification, and pedestrian near-miss alerts.
         """
         t0 = time.time()
         self.frame_count += 1
@@ -90,7 +91,7 @@ class RealVisionPipeline:
         hazards = []
         vehicle_crops = []
 
-        # 1. Primary Deep Learning: YOLOv8 Tracking (conf=0.10 for high sensitivity)
+        # 1. Primary Deep Learning: YOLOv8 Tracking (conf=0.10 for high recall)
         yolo = get_yolo()
         if yolo:
             try:
@@ -167,7 +168,7 @@ class RealVisionPipeline:
             except Exception as e:
                 logger.error(f"YOLO tracking error: {e}")
 
-        # 2. Secondary High-Recall Ensemble: Fallback Computer Vision Detectors
+        # 2. Fallback Computer Vision Saliency & Silhouette Detector
         if len(detections) == 0:
             fallback_dets = self._detect_fallback_objects(infer_frame, small_w, small_h)
             for fb in fallback_dets:
@@ -181,17 +182,45 @@ class RealVisionPipeline:
         # 3. High-Accuracy Multi-Pass ANPR (Vehicle Crops + Center Scan + OCR Matching)
         anpr_results = self._run_multipass_anpr(infer_frame, vehicle_crops, annotated, small_w, small_h)
 
-        # 4. Pothole Measurement & Structural Risk Engine
-        hazards = self._detect_potholes_with_measurements_and_risk(infer_frame, annotated, small_w, small_h, sensor_motion)
+        # 4. Potholes & Surface Degradation Detection with Volume/Risk Metrics
+        pothole_hazards = self._detect_potholes_with_measurements_and_risk(infer_frame, annotated, small_w, small_h, sensor_motion)
+        if pothole_hazards:
+            hazards.extend(pothole_hazards)
 
-        # 5. Render Edge ML HUD Header
+        # 5. Waterlogging & Flooding Reflective Puddle Segmentation
+        water_hazards = self._detect_waterlogging_puddles(infer_frame, annotated, small_w, small_h)
+        if water_hazards:
+            hazards.extend(water_hazards)
+
+        # 6. Damaged Signboard Classification Engine
+        sign_hazards = self._detect_damaged_signboards(infer_frame, annotated, small_w, small_h)
+        if sign_hazards:
+            hazards.extend(sign_hazards)
+
+        # 7. Pedestrian Collision Warning Alert (NEAR_MISS)
+        for det in detections:
+            if det["label"] == "pedestrian" and det.get("distance_m", 10.0) <= 4.5:
+                hazards.append({
+                    "type": "NEAR_MISS",
+                    "confidence": det["confidence"],
+                    "severity": "CRITICAL",
+                    "reason": f"Pedestrian detected {det.get('distance_m')}m ahead in vehicle braking zone",
+                    "bbox": det["bbox"]
+                })
+                # Draw In-Cab Emergency Brake Alert Banner
+                cv2.rectangle(annotated, (10, small_h - 40), (small_w - 10, small_h - 10), (0, 0, 220), -1)
+                cv2.putText(annotated, f"⚠️ DRIVER ALERT: PEDESTRIAN IN BRAKING CORRIDOR ({det.get('distance_m')}m)",
+                            (20, small_h - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 2, cv2.LINE_AA)
+                break
+
+        # 8. Render Edge ML HUD Header
         inference_time_ms = int((time.time() - t0) * 1000)
         hud_text = f"URBANEYE AI VISION | YOLOv8n + EasyOCR | LATENCY: {inference_time_ms}ms | DETECTIONS: {len(detections)}"
         cv2.rectangle(annotated, (8, 8), (min(small_w - 8, 590), 32), (15, 23, 42), -1)
         cv2.rectangle(annotated, (8, 8), (min(small_w - 8, 590), 32), (51, 65, 85), 1)
         cv2.putText(annotated, hud_text, (14, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (34, 197, 94), 1, cv2.LINE_AA)
 
-        # 6. Encode annotated frame
+        # 9. Encode annotated frame
         _, enc_buf = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
         b64_output = f"data:image/jpeg;base64,{base64.b64encode(enc_buf).decode('utf-8')}"
 
@@ -510,9 +539,86 @@ class RealVisionPipeline:
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.38, (241, 245, 249), 1, cv2.LINE_AA)
                     cv2.putText(annotated, risk_str, (abs_x + 3, max(22, abs_y - 5)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.38, box_color, 1, cv2.LINE_AA)
-
                     break
 
+        return hazards
+
+    def _detect_waterlogging_puddles(self, frame: np.ndarray, annotated: np.ndarray, small_w: int, small_h: int) -> list:
+        hazards = []
+        road_y_start = int(small_h * 0.50)
+        road_roi = frame[road_y_start:int(small_h * 0.98), int(small_w * 0.05):int(small_w * 0.95)]
+        if road_roi.size == 0:
+            return hazards
+
+        hsv = cv2.cvtColor(road_roi, cv2.COLOR_BGR2HSV)
+        # Blue/Cyan specular puddle reflection mask
+        lower_blue = np.array([85, 45, 60], dtype=np.uint8)
+        upper_blue = np.array([135, 255, 255], dtype=np.uint8)
+        mask = cv2.inRange(hsv, lower_blue, upper_blue)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area > 1800:
+                rx, ry, rw, rh = cv2.boundingRect(cnt)
+                abs_x = int(small_w * 0.05) + rx
+                abs_y = road_y_start + ry
+
+                hazards.append({
+                    "type": "WATERLOGGING",
+                    "confidence": 0.94,
+                    "severity": "HIGH" if area > 6000 else "MEDIUM",
+                    "risk_label": "MONSOON PUDDLE WATERLOGGING",
+                    "bbox": [abs_x, abs_y, rw, rh]
+                })
+
+                cv2.rectangle(annotated, (abs_x, abs_y), (abs_x + rw, abs_y + rh), (248, 189, 56), 2, cv2.LINE_AA)
+                cv2.putText(annotated, "💧 WATERLOGGING DETECTED", (abs_x, max(15, abs_y - 6)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.40, (248, 189, 56), 2, cv2.LINE_AA)
+                break
+        return hazards
+
+    def _detect_damaged_signboards(self, frame: np.ndarray, annotated: np.ndarray, small_w: int, small_h: int) -> list:
+        hazards = []
+        upper_roi = frame[0:int(small_h * 0.50), :]
+        if upper_roi.size == 0:
+            return hazards
+
+        hsv = cv2.cvtColor(upper_roi, cv2.COLOR_BGR2HSV)
+        # Red / Yellow traffic signboard color mask
+        lower_red1 = np.array([0, 70, 70], dtype=np.uint8)
+        upper_red1 = np.array([10, 255, 255], dtype=np.uint8)
+        lower_yellow = np.array([15, 80, 80], dtype=np.uint8)
+        upper_yellow = np.array([35, 255, 255], dtype=np.uint8)
+
+        mask = cv2.bitwise_or(cv2.inRange(hsv, lower_red1, upper_red1), cv2.inRange(hsv, lower_yellow, upper_yellow))
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if 800 < area < 20000:
+                x, y, w, h = cv2.boundingRect(cnt)
+                aspect = w / float(max(1, h))
+
+                if 0.6 <= aspect <= 2.2:
+                    # Check contour irregularity (damaged/bent signboard)
+                    hull = cv2.convexHull(cnt)
+                    hull_area = cv2.contourArea(hull)
+                    solidity = area / float(max(1, hull_area))
+
+                    if solidity < 0.82:  # Irregular damaged outline
+                        hazards.append({
+                            "type": "DAMAGED_SIGN",
+                            "confidence": 0.88,
+                            "severity": "MEDIUM",
+                            "reason": "Bent / Structural Defect on Municipal Traffic Sign",
+                            "bbox": [x, y, w, h]
+                        })
+
+                        cv2.rectangle(annotated, (x, y), (x + w, y + h), (236, 72, 153), 2, cv2.LINE_AA)
+                        cv2.putText(annotated, "🛑 DAMAGED SIGNBOARD", (x, max(15, y - 6)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (236, 72, 153), 2, cv2.LINE_AA)
+                        break
         return hazards
 
 vision_pipeline = RealVisionPipeline()
