@@ -228,6 +228,28 @@ async def process_phone_frame(
             await process_incoming_event(event_payload, db)
             break
 
+    # Persist Vehicle Count Snapshot to DB if objects detected
+    if len(result["detections"]) > 0:
+        counts = result["counts"]
+        total = sum(counts.values())
+        if total > 0:
+            from ...db.models import VehicleCountSnapshot
+            snapshot = VehicleCountSnapshot(
+                bus_id=bus_id,
+                lat=lat,
+                lng=lng,
+                cars=counts.get("car", 0),
+                motorcycles=counts.get("motorcycle", 0),
+                buses=counts.get("bus", 0),
+                trucks=counts.get("truck", 0),
+                auto_rickshaws=counts.get("auto_rickshaw", 0),
+                pedestrians=counts.get("pedestrian", 0),
+                total_vehicles=total,
+                density_level="HIGH" if total > 8 else "MODERATE" if total > 3 else "LOW"
+            )
+            db.add(snapshot)
+            await db.commit()
+
     return {
         **result,
         "geocoding": geo_info

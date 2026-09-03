@@ -122,6 +122,32 @@ async def get_event_detail(
         metadata=event.metadata_json or {}
     )
 
+@router.get("/db-stats/summary")
+async def get_db_stats(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns live database audit statistics showing real stored records captured from webcam streams.
+    """
+    from ...db.models import Event, ANPRRecord, VehicleCountSnapshot, Bus, RoadSegment
+    from sqlalchemy import func
+
+    events_count = (await db.execute(select(func.count()).select_from(Event))).scalar() or 0
+    anpr_count = (await db.execute(select(func.count()).select_from(ANPRRecord))).scalar() or 0
+    vehicle_snapshots_count = (await db.execute(select(func.count()).select_from(VehicleCountSnapshot))).scalar() or 0
+    buses_count = (await db.execute(select(func.count()).select_from(Bus))).scalar() or 0
+    segments_count = (await db.execute(select(func.count()).select_from(RoadSegment))).scalar() or 0
+
+    return {
+        "database": "SQLite / PostgreSQL Production Database",
+        "status": "ONLINE & PERSISTING",
+        "total_webcam_events_stored": events_count,
+        "total_anpr_plates_stored": anpr_count,
+        "total_vehicle_snapshots_stored": vehicle_snapshots_count,
+        "active_bus_sensors": buses_count,
+        "monitored_road_segments": segments_count
+    }
+
 @router.patch("/{event_id}/status")
 async def update_event_status(
     event_id: str,
