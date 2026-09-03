@@ -203,7 +203,7 @@ export const LiveCameraFeed: React.FC<Props> = ({
     if (isLocalWebcamActive) {
       timer = setInterval(() => {
         processLocalWebcamFrame();
-      }, 120);
+      }, 50);
     }
     return () => {
       if (timer) clearInterval(timer);

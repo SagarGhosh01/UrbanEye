@@ -260,7 +260,7 @@ export const PhoneCameraStreamer: React.FC<Props> = ({
           if (blob) sendBlobToBackend(blob);
           else isProcessingRef.current = false;
         }, 'image/jpeg', 0.65);
-      }, 120);
+      }, 50);
     }
     return () => {
       if (intervalId) clearInterval(intervalId);

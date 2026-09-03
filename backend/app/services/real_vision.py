@@ -46,6 +46,7 @@ class RealVisionPipeline:
         self.cumulative_vehicles = 0
         self.seen_track_ids = set()
         self.track_trajectories = {}
+        self.smoothed_boxes = {}
         self.frame_count = 0
 
     def process_frame(self, image_bytes: bytes, sensor_motion: dict = None) -> dict:
@@ -126,6 +127,17 @@ class RealVisionPipeline:
                             x2, y2 = min(small_w, x2), min(small_h, y2)
                             bw = max(1, x2 - x1)
                             bh = max(1, y2 - y1)
+
+                            # Exponential Moving Average Bounding Box Smoothing across video frames
+                            if track_id is not None:
+                                if track_id in self.smoothed_boxes:
+                                    px, py, pw, ph = self.smoothed_boxes[track_id]
+                                    alpha = 0.65
+                                    x1 = int(alpha * x1 + (1 - alpha) * px)
+                                    y1 = int(alpha * y1 + (1 - alpha) * py)
+                                    bw = int(alpha * bw + (1 - alpha) * pw)
+                                    bh = int(alpha * bh + (1 - alpha) * ph)
+                                self.smoothed_boxes[track_id] = (x1, y1, bw, bh)
 
                             if std_label == "car" and 0.8 <= (bh / float(bw)) <= 1.35 and bw < (small_w * 0.4):
                                 std_label = "auto_rickshaw"
