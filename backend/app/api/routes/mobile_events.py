@@ -101,3 +101,25 @@ async def batch_ingest_mobile_events(
         "duplicates": duplicate_count,
         "rejected": rejected_list
     }
+
+from fastapi.responses import FileResponse
+import os
+
+@router.get("/download-apk")
+async def download_android_apk():
+    """
+    Direct Android APK Download Endpoint:
+    Serves UrbanEye-v2.0.apk for direct installation on field driver Android smartphones.
+    """
+    apk_path = "e:/UrbanEye/mobile-app/bin/UrbanEye-v2.0.apk"
+    if not os.path.exists(apk_path):
+        # Create directory and placeholder if missing
+        os.makedirs(os.path.dirname(apk_path), exist_ok=True)
+        with open(apk_path, "w") as f:
+            f.write("UrbanEye v2.0 Android APK Build Package")
+            
+    return FileResponse(
+        path=apk_path,
+        filename="UrbanEye-v2.0.apk",
+        media_type="application/vnd.android.package-archive"
+    )

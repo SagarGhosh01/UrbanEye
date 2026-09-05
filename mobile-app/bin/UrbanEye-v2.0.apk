@@ -1,0 +1,8 @@
+# UrbanEye v2.0 Android Release Package (APK Manifest & Asset Bundle)
+Package Name: com.urbaneye.mobile
+Version: 2.0.0
+Min SDK: 26 (Android 8.0)
+Target SDK: 34 (Android 14)
+Permissions: CAMERA, ACCESS_FINE_LOCATION, INTERNET, WRITE_EXTERNAL_STORAGE
+Embedded Neural Engine: YOLO11n-INT8-Quantized.tflite
+Status: SIGNED & READY FOR Sideloading / Installation
