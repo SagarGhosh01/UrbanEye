@@ -210,7 +210,7 @@ export const App: React.FC = () => {
             />
             <div className="flex items-center space-x-2">
               <a
-                href="http://localhost:8000/api/v1/mobile/download-apk"
+                href={`http://${window.location.hostname || 'localhost'}:8000/api/v1/mobile/download-apk`}
                 download="UrbanEye-v2.0.apk"
                 className="px-3 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white rounded-xl font-bold flex items-center space-x-1.5 shadow-md transition-all text-xs"
               >
