@@ -52,27 +52,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     badgeColor?: string;
     section?: string;
   }> = [
-    { id: 'command_center', label: 'Command Center', icon: <Home className="w-4 h-4" />, section: 'MAIN' },
-    { id: 'live_bus', label: 'Live Bus Intelligence', icon: <Smartphone className="w-4 h-4" />, badge: 'LIVE', badgeColor: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-    { id: 'fleet', label: 'Fleet Management', icon: <Bus className="w-4 h-4" />, badge: '24' },
+    { id: 'command_center', label: 'Command Center', icon: <Home className="w-4 h-4" />, section: 'EXECUTIVE OVERVIEW' },
     { id: 'gis_map', label: 'GIS City Map', icon: <Map className="w-4 h-4" /> },
     
-    { id: 'incidents', label: 'Incident Management', icon: <AlertTriangle className="w-4 h-4" />, badge: '7', badgeColor: 'bg-rose-500 text-white', section: 'OPERATIONS' },
-    { id: 'infrastructure', label: 'Road & Infrastructure', icon: <Wrench className="w-4 h-4" />, badge: '42' },
-    { id: 'traffic', label: 'Traffic Intelligence', icon: <TrendingUp className="w-4 h-4" /> },
-    { id: 'ai_insights', label: 'AI Insights', icon: <BrainCircuit className="w-4 h-4" />, badge: 'NEW', badgeColor: 'bg-sky-500 text-white' },
+    { id: 'anpr', label: 'ANPR Investigation', icon: <Search className="w-4 h-4" />, section: 'LAW & OPERATIONS' },
+    { id: 'ai_insights', label: 'AI Command Hub', icon: <BrainCircuit className="w-4 h-4" />, badge: 'AI SOTA', badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+    { id: 'fleet', label: 'Fleet & Mobile Devices', icon: <Smartphone className="w-4 h-4" />, badge: 'DEVICES' },
 
-    { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" />, section: 'INTELLIGENCE' },
-    { id: 'routes', label: 'Route Intelligence', icon: <Route className="w-4 h-4" /> },
-    { id: 'coverage', label: 'Fleet Coverage', icon: <Radio className="w-4 h-4" />, badge: '82%' },
-    { id: 'anpr', label: 'Vehicle Investigation', icon: <Search className="w-4 h-4" /> },
-    { id: 'alerts', label: 'Alerts Center', icon: <Bell className="w-4 h-4" />, badge: unreadAlertsCount > 0 ? unreadAlertsCount : undefined, badgeColor: 'bg-amber-500 text-slate-950 font-bold' },
-
-    { id: 'reports', label: 'Reports & Export', icon: <FileText className="w-4 h-4" />, section: 'ADMINISTRATION' },
-    { id: 'users', label: 'Users & Roles', icon: <Users className="w-4 h-4" /> },
-    { id: 'audit_logs', label: 'Audit Logs', icon: <ClipboardList className="w-4 h-4" /> },
-    { id: 'settings', label: 'System Settings', icon: <Settings className="w-4 h-4" /> },
-    { id: 'profile', label: 'Profile & Settings', icon: <User className="w-4 h-4" /> },
+    { id: 'incidents', label: 'Municipal Work Orders', icon: <Wrench className="w-4 h-4" />, section: 'GOVERNANCE & ADMIN' },
+    { id: 'explainability', label: 'Neural Diagnostics', icon: <BarChart3 className="w-4 h-4" /> },
+    { id: 'settings', label: 'Admin & System Config', icon: <Settings className="w-4 h-4" /> },
   ];
 
   const roleFormatted = (role: UserRole) => {

@@ -26,6 +26,7 @@ export type NavigationTab =
   | 'users'
   | 'audit_logs'
   | 'settings'
+  | 'explainability'
   | 'profile';
 
 export interface LocationData {

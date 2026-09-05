@@ -4,8 +4,9 @@ import { Sidebar } from './components/layout/Sidebar';
 import { AuthModal } from './components/auth/AuthModal';
 
 // 19 Module Views
+import { DistrictFilter } from './components/filters/DistrictFilter';
+import { DeviceRegistryConsole } from './components/fleet/DeviceRegistryConsole';
 import { CommandCenterView } from './components/dashboard/CommandCenterView';
-import { LiveCameraFeed } from './components/vision/LiveCameraFeed';
 import { PhoneCameraStreamer } from './components/phone/PhoneCameraStreamer';
 import { FleetManagementView } from './components/fleet/FleetManagementView';
 import { GISMapView } from './components/map/GISMapView';
@@ -25,7 +26,6 @@ import { SystemSettingsView } from './components/settings/SystemSettingsView';
 import { UserProfileView } from './components/profile/UserProfileView';
 
 import { EventDetailModal } from './components/events/EventDetailModal';
-import { PilotDemoControls } from './components/demo/PilotDemoControls';
 import { api } from './services/api';
 import { realtimeService } from './services/websocket';
 import { 
@@ -50,6 +50,10 @@ export const App: React.FC = () => {
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [demoMode, setDemoMode] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(true);
+
+  // District Filter State
+  const [selectedState, setSelectedState] = useState<string>('All States');
+  const [selectedDistrict, setSelectedDistrict] = useState<string>('All Districts');
 
   const [showPhoneStreamer, setShowPhoneStreamer] = useState<boolean>(false);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
@@ -194,31 +198,28 @@ export const App: React.FC = () => {
 
         <main className="flex-1 p-4 md:p-6 space-y-4 max-w-7xl mx-auto w-full">
 
-          {/* Quick Phone Streamer Launcher Bar */}
-          <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl text-xs">
-            <div className="flex items-center space-x-2 text-slate-300">
-              <span className="font-bold text-emerald-400">Mobile Optical Sensor Mode:</span>
-              <span className="text-slate-400">Transform any smartphone rear camera into a live bus YOLO sensor node</span>
-            </div>
+          {/* Persistent Global District Filter Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/80 border border-slate-800 p-3 rounded-2xl shadow-lg backdrop-blur-md">
+            <DistrictFilter
+              selectedState={selectedState}
+              selectedDistrict={selectedDistrict}
+              onFilterChange={(st, dt) => {
+                setSelectedState(st);
+                setSelectedDistrict(dt);
+              }}
+            />
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setShowPhoneStreamer(true)}
-                className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg font-bold flex items-center space-x-1.5 shadow-md transition-all"
+                className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-bold flex items-center space-x-1.5 shadow-md transition-all text-xs"
               >
                 <Smartphone className="w-3.5 h-3.5" />
-                <span>Launch Smartphone Bus Camera</span>
-              </button>
-              <button
-                onClick={() => setShowQrModal(true)}
-                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-colors"
-                title="Mobile Wi-Fi Connection QR"
-              >
-                <QrCode className="w-4 h-4" />
+                <span>Mobile Optical Sensor Mode</span>
               </button>
             </div>
           </div>
 
-          {/* 19 Module Views Render Switcher */}
+          {/* Consolidated View Render Switcher */}
           {activeTab === 'command_center' && (
             <CommandCenterView
               kpis={kpis}
@@ -231,19 +232,11 @@ export const App: React.FC = () => {
             />
           )}
 
-          {activeTab === 'live_bus' && (
-            <div className="h-[620px]">
-              <LiveCameraFeed
-                selectedBusId={selectedBusId}
-                onBusSelect={setSelectedBusId}
-                buses={buses}
-                onOpenPhoneMode={() => setShowPhoneStreamer(true)}
-              />
-            </div>
-          )}
-
           {activeTab === 'fleet' && (
-            <FleetManagementView buses={buses} onNavigate={setActiveTab} />
+            <div className="space-y-6">
+              <DeviceRegistryConsole />
+              <FleetManagementView buses={buses} onNavigate={setActiveTab} />
+            </div>
           )}
 
           {activeTab === 'gis_map' && (

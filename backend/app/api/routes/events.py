@@ -47,6 +47,10 @@ async def list_events(
     severity: Optional[str] = Query(None, description="Filter by severity (LOW, MEDIUM, HIGH, CRITICAL)"),
     status: Optional[str] = Query(None, description="Filter by status (NEW, REVIEWED, DISPATCHED, RESOLVED)"),
     bus_id: Optional[str] = Query(None, description="Filter by bus identifier"),
+    state_id: Optional[str] = Query(None, description="Filter by state ID (e.g. RJ, DL, MH)"),
+    district_id: Optional[str] = Query(None, description="Filter by district ID (e.g. RJ-14, DL-01)"),
+    state_name: Optional[str] = Query(None, description="Filter by state name"),
+    district_name: Optional[str] = Query(None, description="Filter by district name"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
@@ -61,6 +65,14 @@ async def list_events(
         query = query.where(Event.status == status)
     if bus_id:
         query = query.where(Event.bus_id == bus_id)
+    if state_id:
+        query = query.where(Event.state_id == state_id)
+    if district_id:
+        query = query.where(Event.district_id == district_id)
+    if state_name and state_name != "All States":
+        query = query.where(Event.state_name == state_name)
+    if district_name and district_name != "All Districts":
+        query = query.where(Event.district_name == district_name)
         
     query = query.limit(limit).offset(offset)
     res = await db.execute(query)
@@ -124,15 +136,23 @@ async def get_event_detail(
 
 @router.get("/db-stats/summary")
 async def get_db_stats(
+    state_id: Optional[str] = Query(None),
+    district_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Returns live database audit statistics showing real stored records captured from webcam streams.
+    Returns live database audit statistics showing real stored records, with optional district filtering.
     """
     from ...db.models import Event, ANPRRecord, VehicleCountSnapshot, Bus, RoadSegment
     from sqlalchemy import func
 
-    events_count = (await db.execute(select(func.count()).select_from(Event))).scalar() or 0
+    evt_q = select(func.count()).select_from(Event)
+    if state_id:
+        evt_q = evt_q.where(Event.state_id == state_id)
+    if district_id:
+        evt_q = evt_q.where(Event.district_id == district_id)
+
+    events_count = (await db.execute(evt_q)).scalar() or 0
     anpr_count = (await db.execute(select(func.count()).select_from(ANPRRecord))).scalar() or 0
     vehicle_snapshots_count = (await db.execute(select(func.count()).select_from(VehicleCountSnapshot))).scalar() or 0
     buses_count = (await db.execute(select(func.count()).select_from(Bus))).scalar() or 0
@@ -141,6 +161,8 @@ async def get_db_stats(
     return {
         "database": "SQLite / PostgreSQL Production Database",
         "status": "ONLINE & PERSISTING",
+        "filtered_state": state_id or "All States",
+        "filtered_district": district_id or "All Districts",
         "total_webcam_events_stored": events_count,
         "total_anpr_plates_stored": anpr_count,
         "total_vehicle_snapshots_stored": vehicle_snapshots_count,
